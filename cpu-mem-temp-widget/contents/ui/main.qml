@@ -39,10 +39,11 @@ PlasmoidItem {
 
         readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
-        Layout.minimumWidth: layout.implicitWidth
+        Layout.minimumWidth: vertical ? 0 : layout.implicitWidth
         Layout.minimumHeight: layout.implicitHeight
-        Layout.preferredWidth: layout.implicitWidth
+        Layout.preferredWidth: vertical ? -1 : layout.implicitWidth
         Layout.preferredHeight: layout.implicitHeight
+        Layout.fillWidth: vertical
 
         // Reserve the widest possible text per column so the widget does not
         // resize (and jitter) when a value changes digit count.
@@ -71,22 +72,31 @@ PlasmoidItem {
             PlasmaComponents.Label {
                 Layout.alignment: Qt.AlignCenter
                 Layout.minimumWidth: compact.vertical ? 0 : cpuMetrics.width
+                Layout.fillWidth: compact.vertical
                 horizontalAlignment: Text.AlignHCenter
-                text: "CPU " + root.pct(cpuUsage.value)
+                fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
+                minimumPixelSize: 8
+                text: compact.vertical ? "CPU\n" + root.pct(cpuUsage.value) : "CPU " + root.pct(cpuUsage.value)
             }
             Divider {}
             PlasmaComponents.Label {
                 Layout.alignment: Qt.AlignCenter
                 Layout.minimumWidth: compact.vertical ? 0 : ramMetrics.width
+                Layout.fillWidth: compact.vertical
                 horizontalAlignment: Text.AlignHCenter
-                text: "RAM " + root.pct(memPercent.value)
+                fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
+                minimumPixelSize: 8
+                text: compact.vertical ? "RAM\n" + root.pct(memPercent.value) : "RAM " + root.pct(memPercent.value)
             }
             Divider {}
             PlasmaComponents.Label {
                 Layout.alignment: Qt.AlignCenter
                 Layout.minimumWidth: compact.vertical ? 0 : tempMetrics.width
+                Layout.fillWidth: compact.vertical
                 horizontalAlignment: Text.AlignHCenter
-                text: root.temp(tempAvg.value)
+                fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
+                minimumPixelSize: 8
+                text: compact.vertical ? "Temp\n" + root.temp(tempAvg.value) : root.temp(tempAvg.value)
                 color: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
             }
         }
