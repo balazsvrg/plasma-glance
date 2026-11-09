@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents
+import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
 
@@ -36,7 +37,7 @@ PlasmoidItem {
         id: compact
         onClicked: root.expanded = !root.expanded
 
-        readonly property bool vertical: Plasmoid.formFactor === 3 // PlasmaCore.Types.Vertical
+        readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
         Layout.minimumWidth: layout.implicitWidth
         Layout.minimumHeight: layout.implicitHeight
