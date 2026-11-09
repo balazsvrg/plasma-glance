@@ -9,8 +9,13 @@ import org.kde.ksysguard.sensors as Sensors
 PlasmoidItem {
     id: root
 
-    readonly property int refreshMs: 1000
-    readonly property real warnTempC: 80
+    // ---- user settings (contents/config/main.xml) ----
+    readonly property int refreshMs: Math.max(250, Plasmoid.configuration.refreshMs)
+    readonly property real warnTempC: Plasmoid.configuration.warnTemp
+    readonly property bool showCpu: Plasmoid.configuration.showCpu
+    readonly property bool showRam: Plasmoid.configuration.showRam
+    readonly property bool showTemp: Plasmoid.configuration.showTemp
+    readonly property bool useF: Plasmoid.configuration.useFahrenheit
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs }
@@ -23,7 +28,11 @@ PlasmoidItem {
     // ---- formatting helpers ----
     function isNum(v) { return v !== undefined && v !== null && !isNaN(v) }
     function pct(v)   { return isNum(v) ? Math.round(v) + "%" : "--%" }
-    function temp(v)  { return isNum(v) ? Math.round(v) + "°C" : "--°C" }
+    function temp(v) {
+        var unit = useF ? "°F" : "°C"
+        if (!isNum(v)) return "--" + unit
+        return Math.round(useF ? v * 9 / 5 + 32 : v) + unit
+    }
     function gib(v)   { return isNum(v) ? (v / 1073741824).toFixed(1) + " GiB" : "-- GiB" }
 
     readonly property bool tempHot: isNum(tempMax.value) && tempMax.value >= warnTempC
@@ -49,7 +58,7 @@ PlasmoidItem {
         // resize (and jitter) when a value changes digit count.
         TextMetrics { id: cpuMetrics;  font: Kirigami.Theme.defaultFont; text: "CPU 100%" }
         TextMetrics { id: ramMetrics;  font: Kirigami.Theme.defaultFont; text: "RAM 100%" }
-        TextMetrics { id: tempMetrics; font: Kirigami.Theme.defaultFont; text: "100°C" }
+        TextMetrics { id: tempMetrics; font: Kirigami.Theme.defaultFont; text: root.useF ? "212°F" : "100°C" }
 
         // Thin divider spanning the full panel thickness (full height on a
         // horizontal panel, full width on a vertical one).
@@ -70,6 +79,7 @@ PlasmoidItem {
             rowSpacing: Kirigami.Units.smallSpacing
 
             PlasmaComponents.Label {
+                visible: root.showCpu
                 Layout.alignment: Qt.AlignCenter
                 Layout.minimumWidth: compact.vertical ? 0 : cpuMetrics.width
                 Layout.fillWidth: compact.vertical
@@ -78,8 +88,9 @@ PlasmoidItem {
                 minimumPixelSize: 8
                 text: compact.vertical ? "CPU\n" + root.pct(cpuUsage.value) : "CPU " + root.pct(cpuUsage.value)
             }
-            Divider {}
+            Divider { visible: root.showCpu && (root.showRam || root.showTemp) }
             PlasmaComponents.Label {
+                visible: root.showRam
                 Layout.alignment: Qt.AlignCenter
                 Layout.minimumWidth: compact.vertical ? 0 : ramMetrics.width
                 Layout.fillWidth: compact.vertical
@@ -88,8 +99,9 @@ PlasmoidItem {
                 minimumPixelSize: 8
                 text: compact.vertical ? "RAM\n" + root.pct(memPercent.value) : "RAM " + root.pct(memPercent.value)
             }
-            Divider {}
+            Divider { visible: root.showRam && root.showTemp }
             PlasmaComponents.Label {
+                visible: root.showTemp
                 Layout.alignment: Qt.AlignCenter
                 Layout.minimumWidth: compact.vertical ? 0 : tempMetrics.width
                 Layout.fillWidth: compact.vertical
@@ -98,6 +110,11 @@ PlasmoidItem {
                 minimumPixelSize: 8
                 text: compact.vertical ? "Temp\n" + root.temp(tempAvg.value) : root.temp(tempAvg.value)
                 color: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+            }
+            PlasmaComponents.Label {
+                visible: !root.showCpu && !root.showRam && !root.showTemp
+                Layout.alignment: Qt.AlignCenter
+                text: "–"
             }
         }
     }

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+    <kcfgfile name=""/>
+    <group name="General">
+        <entry name="showCpu" type="Bool">
+            <label>Show CPU usage</label>
+            <default>true</default>
+        </entry>
+        <entry name="showRam" type="Bool">
+            <label>Show memory usage</label>
+            <default>true</default>
+        </entry>
+        <entry name="showTemp" type="Bool">
+            <label>Show CPU temperature</label>
+            <default>true</default>
+        </entry>
+        <entry name="useFahrenheit" type="Bool">
+            <label>Show temperature in Fahrenheit</label>
+            <default>false</default>
+        </entry>
+        <entry name="warnTemp" type="Int">
+            <label>Warning temperature in degrees Celsius</label>
+            <default>80</default>
+            <min>30</min>
+            <max>120</max>
+        </entry>
+        <entry name="refreshMs" type="Int">
+            <label>Refresh interval in milliseconds</label>
+            <default>1000</default>
+            <min>250</min>
+            <max>10000</max>
+        </entry>
+    </group>
+</kcfg>
