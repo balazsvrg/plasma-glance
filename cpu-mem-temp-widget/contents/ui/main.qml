@@ -8,7 +8,7 @@ import org.kde.ksysguard.sensors as Sensors
 PlasmoidItem {
     id: root
 
-    readonly property int refreshMs: 2000
+    readonly property int refreshMs: 1000
     readonly property real warnTempC: 80
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
@@ -40,21 +40,51 @@ PlasmoidItem {
 
         Layout.minimumWidth: layout.implicitWidth
         Layout.minimumHeight: layout.implicitHeight
+        Layout.preferredWidth: layout.implicitWidth
+        Layout.preferredHeight: layout.implicitHeight
+
+        // Reserve the widest possible text per column so the widget does not
+        // resize (and jitter) when a value changes digit count.
+        TextMetrics { id: cpuMetrics;  font: Kirigami.Theme.defaultFont; text: "CPU 100%" }
+        TextMetrics { id: ramMetrics;  font: Kirigami.Theme.defaultFont; text: "RAM 100%" }
+        TextMetrics { id: tempMetrics; font: Kirigami.Theme.defaultFont; text: "100°C" }
+
+        // Thin divider spanning the full panel thickness (full height on a
+        // horizontal panel, full width on a vertical one).
+        component Divider: Rectangle {
+            color: Kirigami.Theme.textColor
+            opacity: 0.3
+            Layout.fillWidth: compact.vertical
+            Layout.fillHeight: !compact.vertical
+            Layout.preferredWidth: compact.vertical ? -1 : 1
+            Layout.preferredHeight: compact.vertical ? 1 : -1
+        }
 
         GridLayout {
             id: layout
-            anchors.centerIn: parent
-            columns: compact.vertical ? 1 : 3
+            anchors.fill: parent
+            columns: compact.vertical ? 1 : 5
             columnSpacing: Kirigami.Units.largeSpacing
-            rowSpacing: 0
+            rowSpacing: Kirigami.Units.smallSpacing
 
             PlasmaComponents.Label {
+                Layout.alignment: Qt.AlignCenter
+                Layout.minimumWidth: compact.vertical ? 0 : cpuMetrics.width
+                horizontalAlignment: Text.AlignHCenter
                 text: "CPU " + root.pct(cpuUsage.value)
             }
+            Divider {}
             PlasmaComponents.Label {
+                Layout.alignment: Qt.AlignCenter
+                Layout.minimumWidth: compact.vertical ? 0 : ramMetrics.width
+                horizontalAlignment: Text.AlignHCenter
                 text: "RAM " + root.pct(memPercent.value)
             }
+            Divider {}
             PlasmaComponents.Label {
+                Layout.alignment: Qt.AlignCenter
+                Layout.minimumWidth: compact.vertical ? 0 : tempMetrics.width
+                horizontalAlignment: Text.AlignHCenter
                 text: root.temp(tempAvg.value)
                 color: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
             }
