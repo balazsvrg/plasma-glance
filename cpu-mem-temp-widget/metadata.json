@@ -1,0 +1,14 @@
+{
+    "KPlugin": {
+        "Id": "org.local.cpumemtemp",
+        "Name": "CPU / RAM / Temp Monitor",
+        "Description": "Compact panel widget showing CPU usage, memory usage and CPU temperature",
+        "Icon": "utilities-system-monitor",
+        "Authors": [{ "Name": "Local" }],
+        "Category": "System Information",
+        "License": "GPL-2.0+",
+        "Version": "0.1"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
