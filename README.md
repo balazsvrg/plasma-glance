@@ -19,35 +19,112 @@ CPU 4%  |  RAM 30%  |  35°C
 
 ## Requirements
 
-- KDE Plasma 6 (developed on 6.8)
-- `kpackagetool6` (ships with Plasma)
-- A CPU temperature sensor exposed to KDE System Monitor
+- **KDE Plasma 6.** Developed and tested on Plasma 6.8; it declares Plasma 6.0 as the minimum but has not
+  been tried on older 6.x releases. It does not work on Plasma 5.
+- These Plasma / KDE Frameworks 6 components, which a normal Plasma 6 desktop already includes. If the
+  widget shows a "There was an error loading" message, one of them is missing. Package names on
+  Fedora, for reference (other distributions name them differently):
+
+  | Needed for | Component | Fedora package |
+  |---|---|---|
+  | Installing | `kpackagetool6` | `kf6-kpackage` |
+  | CPU, memory, temperature, frequency, network, fan values | `org.kde.ksysguard.sensors` | `libksysguard` |
+  | Graphs | `org.kde.quickcharts` | `kf6-kquickcharts` |
+  | Sensor discovery (fan) | `org.kde.kitemmodels` | `kf6-kitemmodels` |
+  | Battery | `org.kde.plasma.plasma5support` (power-management engine) | `plasma5support` |
+  | Settings pages | `org.kde.kirigami`, `org.kde.kcmutils` | `kf6-kirigami`, `kf6-kcmutils` |
+
+- Hardware, all optional: a CPU temperature sensor that KDE System Monitor can read, a fan sensor
+  (from lm_sensors), and a battery. A stat the machine cannot supply simply shows `--` or, for battery
+  and fan, does not appear in the settings at all.
 
 ## Install
 
+The widget installs for your user only (into `~/.local/share/plasma/plasmoids/org.local.cpumemtemp/`),
+so no root access is needed. Pick one of these ways.
+
+### From the project folder
+
 ```
+git clone <the repository>      # or copy the folder to the machine
+cd plasma-glance
 ./install.sh
-kquitapp6 plasmashell; kstart plasmashell    # reload Plasma
 ```
 
-Then right-click the panel, choose **Add Widgets**, and add
-**CPU / RAM / Temp Monitor**. Running `./install.sh` again upgrades in place.
+`install.sh` installs the widget, or upgrades it in place if it is already installed.
 
-Uninstall with `./uninstall.sh` (remove it from your panels first).
+### From the package
+
+If you were given a `.plasmoid` file (or built one with `./package.sh`, see below):
+
+```
+kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.5.plasmoid
+```
+
+Use `-u` instead of `-i` to upgrade an installed copy. You can also do it from Plasma: right-click the
+panel, choose **Add Widgets**, then **Get New Widgets > Install from Local File**.
+
+To install it for every user on the machine, add `-g` and run the command as root:
+
+```
+sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.5.plasmoid
+```
+
+### Then load it into Plasma
+
+Plasma only notices a new or upgraded widget when it restarts. Reload it with:
+
+```
+kquitapp6 plasmashell; kstart plasmashell
+```
+
+This blanks the desktop and panels for a second or two; logging out and back in does the same job.
+Your open applications are not affected.
+
+Then right-click the panel, choose **Add Widgets**, search for **CPU / RAM / Temp Monitor** and drag it
+onto the panel. The widget can also sit on the desktop, but it is designed for a panel.
+
+### Check it worked
+
+```
+kpackagetool6 -t Plasma/Applet --list | grep cpumemtemp                      # is it installed?
+grep Version ~/.local/share/plasma/plasmoids/org.local.cpumemtemp/metadata.json   # which version?
+plasmawindowed org.local.cpumemtemp                                           # open it in a plain window
+```
+
+### Upgrade
+
+Run `./install.sh` again (or `kpackagetool6 ... -u` with a new package), then reload Plasma as above.
+Your settings are kept.
+
+### Uninstall
+
+Remove the widget from your panels first, then:
+
+```
+./uninstall.sh                                        # from the project folder, or
+kpackagetool6 -t Plasma/Applet -r org.local.cpumemtemp
+```
+
+and reload Plasma. (A system-wide install needs `sudo ... -g -r` instead.)
+
+### Troubleshooting
+
+- **It is not in the Add Widgets list:** Plasma has not reloaded yet. Run the reload command above.
+- **The widget shows "Sorry! There was an error loading ...":** a component from the requirements table is
+  missing, or the install is damaged. Run `plasmawindowed org.local.cpumemtemp` in a terminal to see the
+  message, install the missing package and reload.
+- **A stat shows `--` or a value of 0:** that sensor is not available on this machine, or has not reported
+  yet. Give it a few seconds after loading.
+- **There is no Battery or Fan row in Configure > Metrics:** the widget did not find that hardware. It
+  looks for a fan for about half a minute after Plasma starts.
 
 ### Package
 
 `./package.sh` builds `dist/org.local.cpumemtemp-<version>.plasmoid` (a zip with `metadata.json` and
-`contents/` at its top level, named after the id and version in `metadata.json`). Install it on this
-or any Plasma 6 machine with:
-
-```
-kpackagetool6 -t Plasma/Applet -i dist/org.local.cpumemtemp-0.5.plasmoid     # add -u instead of -i to upgrade
-```
-
-or from Plasma: right-click the panel > Add Widgets > Get New Widgets > Install from Local File.
-The `dist/` folder is not tracked by git. Before sharing the package, set a real author in
-`metadata.json` (it currently says "Local") and check the license field.
+`contents/` at its top level, named after the id and version in `metadata.json`). Bump the version in
+`metadata.json` first. The `dist/` folder is not tracked by git. Before sharing the package, set a real
+author in `metadata.json` (it currently says "Local") and check the license field.
 
 ## Settings
 
