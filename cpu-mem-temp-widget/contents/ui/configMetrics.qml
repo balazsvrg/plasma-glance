@@ -5,51 +5,48 @@ import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
 import org.kde.plasma.plasmoid
 
-// One row per stat: shown in the panel strip and/or the click-open popup, and whether
-// each of those places gets a graph.
+// A table with one row per stat. Rows can be dragged (or moved with the arrow buttons) to set the
+// order used in the panel strip and the popup. Each row has Show and Graph checkboxes for the
+// panel and for the popup.
 KCM.SimpleKCM {
     id: page
 
     // Bound by Plasma to the entries in contents/config/main.xml.
-    property alias cfg_showCpu: cpuPanel.checked
-    property alias cfg_graphPanelCpu: cpuPanelGraph.checked
-    property alias cfg_popupCpu: cpuPopup.checked
-    property alias cfg_graphPopupCpu: cpuPopupGraph.checked
-
-    property alias cfg_showRam: ramPanel.checked
-    property alias cfg_graphPanelRam: ramPanelGraph.checked
-    property alias cfg_popupMemory: ramPopup.checked
-    property alias cfg_graphPopupRam: ramPopupGraph.checked
-
-    property alias cfg_showTemp: tempPanel.checked
-    property alias cfg_graphPanelTemp: tempPanelGraph.checked
-    property alias cfg_popupTempAvg: tempPopup.checked
-    property alias cfg_graphPopupTemp: tempPopupGraph.checked
-    property alias cfg_popupTempMax: tempMaxPopup.checked
-    property alias cfg_popupCores: coresPopup.checked
-
-    property alias cfg_showFreq: freqPanel.checked
-    property alias cfg_graphPanelFreq: freqPanelGraph.checked
-    property alias cfg_popupFreq: freqPopup.checked
-    property alias cfg_graphPopupFreq: freqPopupGraph.checked
-
-    property alias cfg_showNet: netPanel.checked
-    property alias cfg_graphPanelNet: netPanelGraph.checked
-    property alias cfg_popupNet: netPopup.checked
-    property alias cfg_graphPopupNet: netPopupGraph.checked
-
-    property alias cfg_showBat: batPanel.checked
-    property alias cfg_graphPanelBat: batPanelGraph.checked
-    property alias cfg_popupBat: batPopup.checked
-    property alias cfg_graphPopupBat: batPopupGraph.checked
+    property string cfg_statOrder
+    property bool cfg_showCpu
+    property bool cfg_graphPanelCpu
+    property bool cfg_popupCpu
+    property bool cfg_graphPopupCpu
+    property bool cfg_showRam
+    property bool cfg_graphPanelRam
+    property bool cfg_popupMemory
+    property bool cfg_graphPopupRam
+    property bool cfg_showTemp
+    property bool cfg_graphPanelTemp
+    property bool cfg_popupTempAvg
+    property bool cfg_graphPopupTemp
+    property bool cfg_popupTempMax
+    property bool cfg_popupCores
+    property bool cfg_showFreq
+    property bool cfg_graphPanelFreq
+    property bool cfg_popupFreq
+    property bool cfg_graphPopupFreq
+    property bool cfg_showNet
+    property bool cfg_graphPanelNet
+    property bool cfg_popupNet
+    property bool cfg_graphPopupNet
+    property bool cfg_showBat
+    property bool cfg_graphPanelBat
+    property bool cfg_popupBat
+    property bool cfg_graphPopupBat
     property bool cfg_batSeparate
+    property bool cfg_showFan
+    property bool cfg_graphPanelFan
+    property bool cfg_popupFan
+    property bool cfg_graphPopupFan
+    property bool cfg_fanAnimate
 
-    property alias cfg_showFan: fanPanel.checked
-    property alias cfg_graphPanelFan: fanPanelGraph.checked
-    property alias cfg_popupFan: fanPopup.checked
-    property alias cfg_graphPopupFan: fanPopupGraph.checked
-    property alias cfg_fanAnimate: fanAnimate.checked
-
+    property string cfg_statOrderDefault
     property bool cfg_showCpuDefault
     property bool cfg_graphPanelCpuDefault
     property bool cfg_popupCpuDefault
@@ -83,33 +80,102 @@ KCM.SimpleKCM {
     property bool cfg_graphPopupFanDefault
     property bool cfg_fanAnimateDefault
 
-    // "All graphs" row: checked when every graph box that is shown is checked.
-    // Written by the widget when it detects hardware; read live (no cfg_ property, so the dialog never writes them back).
+    // ---- what each stat is called and which settings belong to it ----
+    readonly property var stats: [
+        { id: "cpu",  name: i18n("CPU usage"),       show: "showCpu",  graph: "graphPanelCpu",  popup: "popupCpu",      popupGraph: "graphPopupCpu" },
+        { id: "ram",  name: i18n("Memory"),          show: "showRam",  graph: "graphPanelRam",  popup: "popupMemory",   popupGraph: "graphPopupRam" },
+        { id: "temp", name: i18n("CPU temperature"), show: "showTemp", graph: "graphPanelTemp", popup: "popupTempAvg",  popupGraph: "graphPopupTemp" },
+        { id: "freq", name: i18n("CPU frequency"),   show: "showFreq", graph: "graphPanelFreq", popup: "popupFreq",     popupGraph: "graphPopupFreq" },
+        { id: "net",  name: i18n("Network speed"),   show: "showNet",  graph: "graphPanelNet",  popup: "popupNet",      popupGraph: "graphPopupNet" },
+        { id: "bat",  name: i18n("Battery"),         show: "showBat",  graph: "graphPanelBat",  popup: "popupBat",      popupGraph: "graphPopupBat" },
+        { id: "fan",  name: i18n("Fan speed"),       show: "showFan",  graph: "graphPanelFan",  popup: "popupFan",      popupGraph: "graphPopupFan" }
+    ]
+    function statInfo(id) {
+        for (var i = 0; i < stats.length; ++i) if (stats[i].id === id) return stats[i]
+        return stats[0]
+    }
+
+    // Detected hardware, written by the widget; read live (no cfg_ property, so the dialog never writes them back).
     readonly property int batteryCount: Plasmoid.configuration.batteryCount
     readonly property int fanCount: Plasmoid.configuration.fanCount
     readonly property bool hasBat: batteryCount > 0
     readonly property bool hasFan: fanCount > 0
-    readonly property bool allPanelGraphs: cpuPanelGraph.checked && ramPanelGraph.checked
-        && tempPanelGraph.checked && freqPanelGraph.checked && netPanelGraph.checked
-        && (!hasBat || batPanelGraph.checked) && (!hasFan || fanPanelGraph.checked)
-    readonly property bool allPopupGraphs: cpuPopupGraph.checked && ramPopupGraph.checked
-        && tempPopupGraph.checked && freqPopupGraph.checked && netPopupGraph.checked
-        && (!hasBat || batPopupGraph.checked) && (!hasFan || fanPopupGraph.checked)
-    function setAllPanelGraphs(on) {
-        cpuPanelGraph.checked = ramPanelGraph.checked = tempPanelGraph.checked
-            = freqPanelGraph.checked = netPanelGraph.checked = batPanelGraph.checked
-            = fanPanelGraph.checked = on
-    }
-    function setAllPopupGraphs(on) {
-        cpuPopupGraph.checked = ramPopupGraph.checked = tempPopupGraph.checked
-            = freqPopupGraph.checked = netPopupGraph.checked = batPopupGraph.checked
-            = fanPopupGraph.checked = on
-    }
+    function rowAvailable(id) { return id === "bat" ? hasBat : (id === "fan" ? hasFan : true) }
 
     // Is this stat currently hidden by the maximum length? (read live from the widget's state)
     function hiddenByLength(id) {
         var d = Plasmoid.configuration.lengthDropped
         return Plasmoid.configuration.maxLength > 0 && !!d && String(d).split(",").indexOf(id) >= 0
+    }
+
+    // ---- a setting by name (the cfg_ properties above) ----
+    function cfgGet(key) { return page["cfg_" + key] }
+    function cfgSet(key, value) { page["cfg_" + key] = value }
+
+    // ---- the order ----
+    ListModel { id: orderModel }
+    function loadOrder(text) {
+        var all = stats.map(function (s) { return s.id })
+        var ids = text ? String(text).split(",") : []
+        var seen = []
+        orderModel.clear()
+        for (var i = 0; i < ids.length; ++i)
+            if (all.indexOf(ids[i]) >= 0 && seen.indexOf(ids[i]) < 0) { seen.push(ids[i]); orderModel.append({ statId: ids[i] }) }
+        for (var j = 0; j < all.length; ++j)
+            if (seen.indexOf(all[j]) < 0) orderModel.append({ statId: all[j] })
+    }
+    function currentOrder() {
+        var ids = []
+        for (var i = 0; i < orderModel.count; ++i) ids.push(orderModel.get(i).statId)
+        return ids.join(",")
+    }
+    function moveRow(from, to) {
+        if (from === to || to < 0 || to >= orderModel.count) return
+        orderModel.move(from, to, 1)
+        cfg_statOrder = currentOrder()
+    }
+    // Follow outside changes (the dialog opening, or "Defaults"), but not our own writes.
+    onCfg_statOrderChanged: if (cfg_statOrder !== currentOrder()) loadOrder(cfg_statOrder)
+    Component.onCompleted: loadOrder(cfg_statOrder)
+
+    // ---- "All graphs" ----
+    function allGraphs(popup) {
+        for (var i = 0; i < stats.length; ++i) {
+            if (!rowAvailable(stats[i].id)) continue
+            if (!cfgGet(popup ? stats[i].popupGraph : stats[i].graph)) return false
+        }
+        return true
+    }
+    function setAllGraphs(popup, on) {
+        for (var i = 0; i < stats.length; ++i) cfgSet(popup ? stats[i].popupGraph : stats[i].graph, on)
+    }
+
+    // ---- column sizes, shared by the header, the rows and the sub-rows so everything lines up ----
+    readonly property real handleWidth: Kirigami.Units.iconSizes.smallMedium
+    readonly property real nameWidth: Kirigami.Units.gridUnit * 20
+    readonly property real checkWidth: Kirigami.Units.gridUnit * 3.5
+    readonly property real gap: Kirigami.Units.smallSpacing
+
+    // A checkbox cell tied to a setting by name, centred under its column header; the Binding keeps
+    // the box in step after the user clicks it.
+    component CfgCheck: Item {
+        id: cell
+        property string key
+        Layout.preferredWidth: page.checkWidth
+        implicitHeight: box.implicitHeight
+        QQC2.CheckBox {
+            id: box
+            anchors.centerIn: parent
+            onToggled: page.cfgSet(cell.key, checked)
+            Binding { target: box; property: "checked"; value: page.cfgGet(cell.key) }
+        }
+    }
+    // A plain labelled checkbox tied to a setting by name.
+    component CfgCheckLabelled: QQC2.CheckBox {
+        id: labelled
+        property string key
+        onToggled: page.cfgSet(key, checked)
+        Binding { target: labelled; property: "checked"; value: page.cfgGet(labelled.key) }
     }
     // A stat's name, with a marker when the maximum length is hiding it in the panel.
     component StatName: RowLayout {
@@ -118,6 +184,9 @@ KCM.SimpleKCM {
         property string statId
         readonly property bool hidden: page.hiddenByLength(statId)
         spacing: Kirigami.Units.smallSpacing
+        Layout.minimumWidth: page.nameWidth
+        Layout.preferredWidth: page.nameWidth
+        Layout.maximumWidth: page.nameWidth
         QQC2.Label { text: sn.name }
         Kirigami.Icon {
             visible: sn.hidden
@@ -137,126 +206,180 @@ KCM.SimpleKCM {
         Layout.fillWidth: true
         LengthNotice { }
 
-        GridLayout {
-            columns: 5
-            columnSpacing: Kirigami.Units.gridUnit * 1.5
-            rowSpacing: Kirigami.Units.smallSpacing
+        QQC2.Label {
+            text: i18n("Drag a row by its handle, or use the arrows, to reorder. The order is used in the panel (left to right) and in the popup (top to bottom). When space is short, the stats at the bottom are hidden first.")
+            wrapMode: Text.WordWrap
+            opacity: 0.8
+            Layout.fillWidth: true
+            Layout.bottomMargin: Kirigami.Units.smallSpacing
+        }
 
-            // Group headers
-            Item { }
-            QQC2.Label { text: i18n("In the panel"); font.bold: true; Layout.columnSpan: 2; Layout.alignment: Qt.AlignHCenter }
-            QQC2.Label { text: i18n("In the popup"); font.bold: true; Layout.columnSpan: 2; Layout.alignment: Qt.AlignHCenter }
-
-            QQC2.Label { text: i18n("Stat"); font.bold: true }
-            QQC2.Label { text: i18n("Show"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
-            QQC2.Label { text: i18n("Graph"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
-            QQC2.Label { text: i18n("Show"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
-            QQC2.Label { text: i18n("Graph"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
-
-            StatName { name: i18n("CPU usage"); statId: "cpu" }
-            QQC2.CheckBox { id: cpuPanel; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: cpuPanelGraph; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: cpuPopup; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: cpuPopupGraph; Layout.alignment: Qt.AlignHCenter }
-
-            StatName { name: i18n("Memory"); statId: "ram" }
-            QQC2.CheckBox { id: ramPanel; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: ramPanelGraph; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: ramPopup; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: ramPopupGraph; Layout.alignment: Qt.AlignHCenter }
-
-            StatName { name: i18n("CPU temperature"); statId: "temp" }
-            QQC2.CheckBox { id: tempPanel; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: tempPanelGraph; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: tempPopup; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: tempPopupGraph; Layout.alignment: Qt.AlignHCenter }
-
-            QQC2.Label { text: i18n("Hottest core"); Layout.leftMargin: Kirigami.Units.gridUnit; opacity: 0.8 }
-            Item { }
-            Item { }
-            QQC2.CheckBox { id: tempMaxPopup; Layout.alignment: Qt.AlignHCenter }
-            Item { }
-
-            QQC2.Label { text: i18n("Per-core temperatures"); Layout.leftMargin: Kirigami.Units.gridUnit; opacity: 0.8 }
-            Item { }
-            Item { }
-            QQC2.CheckBox { id: coresPopup; Layout.alignment: Qt.AlignHCenter }
-            Item { }
-
-            StatName { name: i18n("CPU frequency"); statId: "freq" }
-            QQC2.CheckBox { id: freqPanel; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: freqPanelGraph; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: freqPopup; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: freqPopupGraph; Layout.alignment: Qt.AlignHCenter }
-
-            StatName { name: i18n("Network speed"); statId: "net" }
-            QQC2.CheckBox { id: netPanel; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: netPanelGraph; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: netPopup; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: netPopupGraph; Layout.alignment: Qt.AlignHCenter }
-
-            // Only shown on machines where the widget found a battery.
-            StatName { name: i18n("Battery"); statId: "bat"; visible: page.hasBat }
-            QQC2.CheckBox { id: batPanel; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: batPanelGraph; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: batPopup; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: batPopupGraph; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
-
-            // Only shown on machines where the widget found a fan sensor.
-            StatName { name: i18n("Fan speed"); statId: "fan"; visible: page.hasFan }
-            QQC2.CheckBox { id: fanPanel; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: fanPanelGraph; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: fanPopup; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
-            QQC2.CheckBox { id: fanPopupGraph; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
-
-            // Turn every graph on or off at once.
-            QQC2.Label { text: i18n("All graphs"); font.bold: true; Layout.topMargin: Kirigami.Units.largeSpacing }
-            Item { }
-            QQC2.CheckBox {
-                id: allPanelBox
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: Kirigami.Units.largeSpacing
-                onToggled: page.setAllPanelGraphs(checked)
-            }
-            Item { }
-            QQC2.CheckBox {
-                id: allPopupBox
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: Kirigami.Units.largeSpacing
-                onToggled: page.setAllPopupGraphs(checked)
-            }
-            // Bindings survive user clicks (a plain "checked:" binding would be dropped).
-            Binding { target: allPanelBox; property: "checked"; value: page.allPanelGraphs }
-            Binding { target: allPopupBox; property: "checked"; value: page.allPopupGraphs }
-
-            QQC2.CheckBox {
-                id: fanAnimate
-                visible: page.hasFan
-                Layout.columnSpan: 5
-                Layout.topMargin: Kirigami.Units.largeSpacing
-                text: i18n("Animate fan icon based on fan speed")
-            }
-
-            // Only offered when there are several batteries to separate.
+        // Group headers
+        RowLayout {
+            spacing: page.gap
+            Item { Layout.preferredWidth: page.handleWidth }
+            QQC2.Label { text: i18n("Stat"); font.bold: true; Layout.preferredWidth: page.nameWidth }
             QQC2.Label {
-                visible: page.batteryCount > 1
-                text: i18n("Popup battery view")
-                Layout.topMargin: Kirigami.Units.largeSpacing
+                text: i18n("In the panel"); font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+                Layout.preferredWidth: page.checkWidth * 2 + page.gap
             }
+            QQC2.Label {
+                text: i18n("In the popup"); font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+                Layout.preferredWidth: page.checkWidth * 2 + page.gap
+            }
+        }
+        RowLayout {
+            spacing: page.gap
+            Item { Layout.preferredWidth: page.handleWidth }
+            Item { Layout.preferredWidth: page.nameWidth }
+            Repeater {
+                model: [i18n("Show"), i18n("Graph"), i18n("Show"), i18n("Graph")]
+                delegate: QQC2.Label {
+                    required property string modelData
+                    text: modelData
+                    opacity: 0.8
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.preferredWidth: page.checkWidth
+                }
+            }
+        }
+
+        ListView {
+            id: list
+            Layout.fillWidth: true
+            Layout.preferredHeight: contentHeight
+            interactive: false                    // the page itself scrolls
+            model: orderModel
+            // Rows glide into place as they are reordered.
+            moveDisplaced: Transition {
+                YAnimator { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad }
+            }
+
+            delegate: Item {
+                id: slot
+                required property int index
+                required property string statId
+                readonly property var info: page.statInfo(statId)
+                width: list.width
+                visible: page.rowAvailable(statId)
+                height: visible ? row.implicitHeight : 0
+
+                // The dragged item must be a child of the delegate, not the delegate itself.
+                Item {
+                    id: row
+                    width: slot.width
+                    implicitHeight: content.implicitHeight + Kirigami.Units.smallSpacing * 2
+
+                    ColumnLayout {
+                        id: content
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width
+                        spacing: 0
+
+                        RowLayout {
+                            spacing: page.gap
+                            Kirigami.ListItemDragHandle {
+                                listItem: row
+                                listView: list
+                                Layout.preferredWidth: page.handleWidth
+                                Layout.preferredHeight: page.handleWidth
+                                onMoveRequested: function (oldIndex, newIndex) { page.moveRow(oldIndex, newIndex) }
+                            }
+                            StatName { name: slot.info.name; statId: slot.statId }
+                            CfgCheck { key: slot.info.show }
+                            CfgCheck { key: slot.info.graph }
+                            CfgCheck { key: slot.info.popup }
+                            CfgCheck { key: slot.info.popupGraph }
+                            QQC2.ToolButton {
+                                icon.name: "arrow-up"
+                                enabled: slot.index > 0
+                                onClicked: page.moveRow(slot.index, slot.index - 1)
+                                QQC2.ToolTip.text: i18n("Move up")
+                                QQC2.ToolTip.visible: hovered
+                            }
+                            QQC2.ToolButton {
+                                icon.name: "arrow-down"
+                                enabled: slot.index < orderModel.count - 1
+                                onClicked: page.moveRow(slot.index, slot.index + 1)
+                                QQC2.ToolTip.text: i18n("Move down")
+                                QQC2.ToolTip.visible: hovered
+                            }
+                        }
+
+                        // Popup-only details of the temperature stat; they move with it.
+                        RowLayout {
+                            visible: slot.statId === "temp"
+                            spacing: page.gap
+                            Item { Layout.preferredWidth: page.handleWidth }
+                            QQC2.Label { text: i18n("Hottest core"); opacity: 0.8; leftPadding: Kirigami.Units.gridUnit; Layout.preferredWidth: page.nameWidth }
+                            Item { Layout.preferredWidth: page.checkWidth }
+                            Item { Layout.preferredWidth: page.checkWidth }
+                            CfgCheck { key: "popupTempMax" }
+                        }
+                        RowLayout {
+                            visible: slot.statId === "temp"
+                            spacing: page.gap
+                            Item { Layout.preferredWidth: page.handleWidth }
+                            QQC2.Label { text: i18n("Per-core temperatures"); opacity: 0.8; leftPadding: Kirigami.Units.gridUnit; Layout.preferredWidth: page.nameWidth }
+                            Item { Layout.preferredWidth: page.checkWidth }
+                            Item { Layout.preferredWidth: page.checkWidth }
+                            CfgCheck { key: "popupCores" }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Turn every graph on or off at once.
+        RowLayout {
+            spacing: page.gap
+            Layout.topMargin: Kirigami.Units.largeSpacing
+            Item { Layout.preferredWidth: page.handleWidth }
+            QQC2.Label { text: i18n("All graphs"); font.bold: true; Layout.preferredWidth: page.nameWidth }
+            Item { Layout.preferredWidth: page.checkWidth }
+            Item {
+                Layout.preferredWidth: page.checkWidth
+                implicitHeight: allPanelBox.implicitHeight
+                QQC2.CheckBox {
+                    id: allPanelBox
+                    anchors.centerIn: parent
+                    onToggled: page.setAllGraphs(false, checked)
+                    Binding { target: allPanelBox; property: "checked"; value: page.allGraphs(false) }
+                }
+            }
+            Item { Layout.preferredWidth: page.checkWidth }
+            Item {
+                Layout.preferredWidth: page.checkWidth
+                implicitHeight: allPopupBox.implicitHeight
+                QQC2.CheckBox {
+                    id: allPopupBox
+                    anchors.centerIn: parent
+                    onToggled: page.setAllGraphs(true, checked)
+                    Binding { target: allPopupBox; property: "checked"; value: page.allGraphs(true) }
+                }
+            }
+        }
+
+        CfgCheckLabelled {
+            visible: page.hasFan
+            Layout.topMargin: Kirigami.Units.largeSpacing
+            key: "fanAnimate"
+            text: i18n("Animate fan icon based on fan speed")
+        }
+
+        // Only offered when there are several batteries to separate.
+        RowLayout {
+            visible: page.batteryCount > 1
+            Layout.topMargin: Kirigami.Units.largeSpacing
+            QQC2.Label { text: i18n("Popup battery view") }
             QQC2.ComboBox {
                 id: batViewBox
-                visible: page.batteryCount > 1
-                Layout.columnSpan: 4
-                Layout.fillWidth: true
-                Layout.topMargin: Kirigami.Units.largeSpacing
                 model: [i18n("Combined"), i18n("Each battery separately")]
                 onActivated: page.cfg_batSeparate = (currentIndex === 1)
             }
-            Binding {
-                target: batViewBox
-                property: "currentIndex"
-                value: page.cfg_batSeparate ? 1 : 0
-            }
+            Binding { target: batViewBox; property: "currentIndex"; value: page.cfg_batSeparate ? 1 : 0 }
         }
     }
 }

@@ -49,9 +49,13 @@ Right-click the widget in the panel and choose **Configure…**. There are three
 | Maximum length (px) of the panel strip; 0 = no limit | no limit |
 | Refresh interval | 1000 ms (min 250) |
 
-**Metrics**: one row per stat. Each stat has four checkboxes: whether it is **shown** in the
+**Metrics**: a table with one row per stat. Each stat has four checkboxes: whether it is **shown** in the
 panel and in the popup, and whether each of those gets a **graph**. An *All graphs* row turns
 every graph on or off in one click. Graphs are off by default.
+
+**Reordering:** drag a row by its handle (or use the up and down arrows) to set the order of the stats.
+The order is used in the panel (left to right) and in the popup (top to bottom). The hottest-core and
+per-core rows move with CPU temperature. When space is short, stats at the bottom are hidden first.
 
 | Stat | Panel | Popup |
 |---|---|---|
@@ -104,7 +108,7 @@ that fits:
    becomes `2400` next to the fan icon.
 3. Tighter spacing.
 4. If it still does not fit, stats are dropped from the end of the strip (Fan, Battery, Network,
-   Frequency, Temperature, Memory). CPU is never dropped.
+   Frequency, Temperature, Memory in the default order). The first stat in your order is never dropped.
 
 The tooltip always lists every stat, including dropped ones. With the limit at 0 nothing changes.
 
@@ -163,6 +167,10 @@ install.sh / uninstall.sh
 ```
 
 ## Changelog
+
+**Unreleased**
+- Reorder the stats: the Metrics tab is a table whose rows can be dragged (or moved with arrows). The order
+  drives the panel strip and the popup, and decides which stats are hidden first when space is short.
 
 **0.4**
 - New stats, all off by default: CPU frequency, network speed (all interfaces, bytes or bits), battery
