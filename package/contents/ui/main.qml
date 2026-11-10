@@ -390,11 +390,12 @@ PlasmoidItem {
             if (rows === 0) { rows = 1; barModel.set(0, { a: 0, b: 0 }) }      // keep one row so the model has its roles
             if (barModel.count > rows) barModel.remove(rows, barModel.count - rows)
         }
-        function scheduleRebuild() { Qt.callLater(rebuild) }
+        function scheduleRebuild() { if (root.barChart) Qt.callLater(rebuild) }   // line mode keeps no bar model
         onSlotCountChanged: scheduleRebuild()
         onBucketSizeChanged: scheduleRebuild()
         onStoreChanged: scheduleRebuild()
         Component.onCompleted: scheduleRebuild()
+        Connections { target: root; function onBarChartChanged() { spark.scheduleRebuild() } }
         Connections { target: spark.store; function onRevisionChanged() { spark.scheduleRebuild() } }
         Connections { target: spark.store2; function onRevisionChanged() { spark.scheduleRebuild() } }
         ListModel { id: barModel; ListElement { a: 0; b: 0 } }

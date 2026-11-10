@@ -423,7 +423,7 @@ has no bucketing of its own and `HistoryProxySource` does not expose its samples
   one changes between ticks. `rebuild()` (scheduled with `Qt.callLater`) writes the mean of each bucket
   into a `ListModel` (row 0 = newest, which `ZeroAtEnd` draws at the right edge) read by two
   `Charts.ModelSource`s (roles `a` for the first series, `b` for the second). It reruns when the store
-  changes, the width changes or the history length changes.
+  changes, the chart style changes to bar, the width changes or the history length changes.
 - The chart is `slotCount * slotPx` wide, anchored to the right, with `xRange` fixed to `0..slotCount`
   so a bar keeps its width while the history is still filling, `spacing: 1` and
   `barWidth: slotPx - 1`. Bar edges can be anti-aliased by about half a pixel.
