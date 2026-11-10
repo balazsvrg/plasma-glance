@@ -505,7 +505,20 @@ PlasmoidItem {
     // The saved limit (px, 0 = no limit), or the live value while the edge handle is being dragged.
     readonly property int maxLength: dragging ? dragMax() : Plasmoid.configuration.maxLength
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
-    readonly property var statOrder: ["cpu", "ram", "temp", "freq", "net", "bat", "fan"]
+    // The order is the user's (Metrics tab); it drives the panel strip and the popup. It is also the
+    // priority when space is short: stats are dropped from the end, and the first one is never dropped.
+    readonly property var defaultOrder: ["cpu", "ram", "temp", "freq", "net", "bat", "fan"]
+    readonly property var statOrder: normalizeOrder(Plasmoid.configuration.statOrder)
+    // Keep only known stats, without repeats, and add any that are missing (e.g. after an upgrade).
+    function normalizeOrder(text) {
+        var ids = text ? String(text).split(",") : []
+        var out = []
+        for (var i = 0; i < ids.length; ++i)
+            if (defaultOrder.indexOf(ids[i]) >= 0 && out.indexOf(ids[i]) < 0) out.push(ids[i])
+        for (var j = 0; j < defaultOrder.length; ++j)
+            if (out.indexOf(defaultOrder[j]) < 0) out.push(defaultOrder[j])
+        return out
+    }
 
     function statShown(id) {
         switch (id) {
@@ -578,6 +591,40 @@ PlasmoidItem {
     function batArrowShort() { return batState > 0 ? "↑" : (batState < 0 ? "↓" : "") }
     function rpmNumber(v) { return isNum(v) ? String(Math.round(Number(v))) : "--" }
 
+    // Per-stat colours, history and graph scale, so a panel cell needs nothing but its id.
+    function statTextColor(id) {
+        if (id === "temp" && avgHot) return Kirigami.Theme.negativeTextColor
+        if (id === "bat" && batLow) return Kirigami.Theme.negativeTextColor
+        return Kirigami.Theme.textColor
+    }
+    function statLineColor(id) {
+        return statTextColor(id) === Kirigami.Theme.negativeTextColor ? Kirigami.Theme.negativeTextColor
+                                                                      : Kirigami.Theme.highlightColor
+    }
+    function statHistory(id) {
+        switch (id) {
+        case "cpu":  return cpuHist
+        case "ram":  return ramHist
+        case "temp": return tempHist
+        case "freq": return freqHist
+        case "net":  return netDownHist
+        case "bat":  return batHist
+        case "fan":  return fanHist
+        }
+        return null
+    }
+    function statHistory2(id) { return id === "net" ? netUpHist : null }
+    function statYFrom(id) { return id === "temp" ? tempYMin : 0 }
+    function statYTo(id) {
+        switch (id) {
+        case "temp": return tempYMax
+        case "freq": return freqPeak
+        case "net":  return netPeak
+        case "fan":  return fanPeak
+        }
+        return 100
+    }
+
     // The text of a stat in the panel, for the current step (compact or full) and orientation.
     function statText(id, compact, vert) {
         switch (id) {
@@ -636,7 +683,9 @@ PlasmoidItem {
         for (var i = 0; i < n; ++i) total += cellLength(ids[i], level)
         var gap = vertical ? rowSpacingFor(level) : spacingFor(level)
         // a 1 px divider and two gaps between stats; rounded up so rounding never lets it exceed the limit
-        return Math.ceil(total + (n - 1) * (1 + 2 * gap))
+        // Layout rounding can add a pixel (seen as 1 px in every test, however many stats), so allow
+        // for it: the strip then stays at or under the limit.
+        return Math.ceil(total + (n - 1) * (1 + 2 * gap)) + 1
     }
     function computeFit() {
         var ids = shownIds()
@@ -829,15 +878,15 @@ PlasmoidItem {
             id: cell
             property string statId
             readonly property bool fan: statId === "fan"       // show the spinning fan icon before the text
-            property int fanLevel: 0
-            property color textColor: Kirigami.Theme.textColor
-            property var history: null
-            property var history2: null
-            property real yFrom: 0
-            property real yTo: 100
-            property color lineColor: Kirigami.Theme.highlightColor
+            readonly property int fanLevel: root.fanLevel
+            readonly property color textColor: root.statTextColor(statId)
+            readonly property var history: root.statHistory(statId)
+            readonly property var history2: root.statHistory2(statId)
+            readonly property real yFrom: root.statYFrom(statId)
+            readonly property real yTo: root.statYTo(statId)
+            readonly property color lineColor: root.statLineColor(statId)
 
-            property bool graphOn: false                       // this stat's panel graph toggle
+            readonly property bool graphOn: root.statGraph(statId)   // this stat's panel graph toggle
             readonly property bool hasGraph: graphOn && history !== null
             // Inline graphs take length, so they turn into behind-text graphs when space is short.
             readonly property bool behind: hasGraph && !root.inlineGraphsAt(root.lengthLevel)
@@ -859,7 +908,9 @@ PlasmoidItem {
 
             GridLayout {
                 id: content
-                anchors.fill: parent
+                // Centred at its natural size on a horizontal strip; filling the width when vertical.
+                anchors.fill: compact.vertical ? parent : undefined
+                anchors.centerIn: compact.vertical ? undefined : parent
                 columns: compact.vertical ? 1 : (cell.fan ? 3 : 2)
                 columnSpacing: Kirigami.Units.smallSpacing
                 rowSpacing: 0
@@ -900,89 +951,33 @@ PlasmoidItem {
         GridLayout {
             id: layout
             anchors.fill: parent
-            columns: compact.vertical ? 1 : 13
+            columns: compact.vertical ? 1 : root.statOrder.length + 1
             columnSpacing: root.spacingFor(root.lengthLevel)
             rowSpacing: root.rowSpacingFor(root.lengthLevel)
 
-            MetricCell {
-                statId: "cpu"
-                visible: root.cellShown("cpu")
-                Layout.alignment: Qt.AlignCenter
-                Layout.fillWidth: compact.vertical
-                Layout.fillHeight: !compact.vertical
-                graphOn: root.gpCpu
-                history: root.cpuHist
-            }
-            Divider { visible: root.cellShown("ram") && root.anyCellBefore("ram") }
-            MetricCell {
-                statId: "ram"
-                visible: root.cellShown("ram")
-                Layout.alignment: Qt.AlignCenter
-                Layout.fillWidth: compact.vertical
-                Layout.fillHeight: !compact.vertical
-                graphOn: root.gpRam
-                history: root.ramHist
-            }
-            Divider { visible: root.cellShown("temp") && root.anyCellBefore("temp") }
-            MetricCell {
-                statId: "temp"
-                visible: root.cellShown("temp")
-                Layout.alignment: Qt.AlignCenter
-                Layout.fillWidth: compact.vertical
-                Layout.fillHeight: !compact.vertical
-                textColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-                graphOn: root.gpTemp
-                history: root.tempHist
-                yFrom: root.tempYMin
-                yTo: root.tempYMax
-                lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
-            }
-            Divider { visible: root.cellShown("freq") && root.anyCellBefore("freq") }
-            MetricCell {
-                statId: "freq"
-                visible: root.cellShown("freq")
-                Layout.alignment: Qt.AlignCenter
-                Layout.fillWidth: compact.vertical
-                Layout.fillHeight: !compact.vertical
-                graphOn: root.gpFreq
-                history: root.freqHist
-                yTo: root.freqPeak
-            }
-            Divider { visible: root.cellShown("net") && root.anyCellBefore("net") }
-            MetricCell {
-                statId: "net"
-                visible: root.cellShown("net")
-                Layout.alignment: Qt.AlignCenter
-                Layout.fillWidth: compact.vertical
-                Layout.fillHeight: !compact.vertical
-                graphOn: root.gpNet
-                history: root.netDownHist
-                history2: root.netUpHist
-                yTo: root.netPeak
-            }
-            Divider { visible: root.cellShown("bat") && root.anyCellBefore("bat") }
-            MetricCell {
-                statId: "bat"
-                visible: root.cellShown("bat")
-                Layout.alignment: Qt.AlignCenter
-                Layout.fillWidth: compact.vertical
-                Layout.fillHeight: !compact.vertical
-                textColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-                graphOn: root.gpBat
-                history: root.batHist
-                lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
-            }
-            Divider { visible: root.cellShown("fan") && root.anyCellBefore("fan") }
-            MetricCell {
-                statId: "fan"
-                visible: root.cellShown("fan")
-                Layout.alignment: Qt.AlignCenter
-                Layout.fillWidth: compact.vertical
-                Layout.fillHeight: !compact.vertical
-                fanLevel: root.fanLevel
-                graphOn: root.gpFan
-                history: root.fanHist
-                yTo: root.fanPeak
+            // One slot per stat, in the user's order: a divider (only after the first shown stat)
+            // followed by the stat's cell. Hidden stats take no space.
+            Repeater {
+                model: root.statOrder
+                delegate: GridLayout {
+                    id: slot
+                    required property string modelData
+                    visible: root.cellShown(modelData)
+                    columns: compact.vertical ? 1 : 2
+                    columnSpacing: layout.columnSpacing
+                    rowSpacing: layout.rowSpacing
+                    Layout.alignment: Qt.AlignCenter
+                    Layout.fillWidth: compact.vertical
+                    Layout.fillHeight: !compact.vertical
+
+                    Divider { visible: root.anyCellBefore(slot.modelData) }
+                    MetricCell {
+                        statId: slot.modelData
+                        Layout.alignment: Qt.AlignCenter
+                        Layout.fillWidth: true          // text stays centred between the dividers
+                        Layout.fillHeight: !compact.vertical
+                    }
+                }
             }
             PlasmaComponents.Label {
                 visible: !root.anyCell()
