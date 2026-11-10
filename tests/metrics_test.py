@@ -109,12 +109,12 @@ for mid, text in sorted(found.items()):
     lit = re.match(r'"(.*)"$', text)
     variants = {True: tern.group(1), False: tern.group(2)} if tern else {False: lit.group(1), True: lit.group(1)}
     for useF in ([False, True] if tern else [False]):
-        got = panel_text(stat, compact, False, sample(stat, False, useF=useF), useF=useF)
+        got = run(M, "reserveText(byId(%s),%s,%s)" % (json.dumps(stat), str(compact).lower(), ctx(useF=useF)))
         equal("%s%s horizontal %s%s" % (stat, " compact" if compact else " full", "F" if useF else "C", "" if tern else " (unit-less)"),
               got, variants[useF])
-# main.qml's mNet is "999 MB/s" in both unit modes; in bits mode the registry's sample renders the matching "999 Mb/s".
-equal("net full, bits mode", panel_text("net", False, False, sample("net", False, netBits=True), netBits=True),
-      "↓999 Mb/s ↑999 Mb/s")
+# main.qml's mNet is "999 MB/s" in both unit modes, so the horizontal sample is the same in bits mode.
+equal("net full reserve, bits mode keeps the bytes text", run(M, "reserveText(byId('net'),false,%s)" % ctx(netBits=True)),
+      "\u2193999 MB/s \u2191999 MB/s")
 
 # Vertical lines: the worst-case lines of verticalLines(id, compact, true) in main.qml, written out here.
 # Source: verticalCaption(), statValue() samples (checked below against main.qml), valueText(), netLines().

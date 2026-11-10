@@ -17,7 +17,8 @@
 //   source    only when values do not come from plain sensors: { kind: "dataengine" | "discovered", ... }
 //   panel     full / compact: horizontal templates; vertical / verticalCompact: arrays of line templates
 //             (verticalCompact only where the vertical panel may shorten the value, see statCompact);
-//             sample / verticalSample: the widest value set (width reserve); sampleBits: net in bits mode
+//             sample / verticalSample: the widest value set (width reserve); sampleBits: net in bits mode;
+//             reserveCtx: settings overridden when the horizontal reserve is rendered (net: bytes)
 //   scale     graph scale: { from, to } fixed, { from, to: function(ctx) }, or
 //             { from, mode: "peak" | "decay", floor, decay } (a scale that follows the data)
 //   alert     function(vals, ctx) -> bool: the panel text turns red
@@ -201,9 +202,11 @@ var METRICS = [
         panel: {
             full: "↓{down:rate} ↑{up:rate}", compact: "↓{down:rateShort} ↑{up:rateShort}",
             vertical: ["Net", "↓{down:rateShort}", "↑{up:rateShort}"],
-            // Bits mode scales the sample so it is the widest in either unit. (main.qml reserves the horizontal
-            // width from the bytes text "999 MB/s" in both modes.)
+            // The horizontal reserve is the bytes text "999 MB/s" in both unit modes (as main.qml reserves it):
+            // reserveCtx overrides the settings when the reserve is rendered. Vertically the sample is
+            // scaled in bits mode so it is the widest in either unit.
             sample: { down: 999e6, up: 999e6 },
+            reserveCtx: { netBits: false },
             sampleBits: { down: 999e6 / 8, up: 999e6 / 8 }
         },
         // Rises at once to the highest rate, decays 1% per second of real time, never below 100 KB/s.
@@ -297,12 +300,19 @@ function byId(id) {
 // The worst-case value set for a kind of text: "horizontal" or "vertical".
 function sampleVals(m, vertical, ctx) {
     var p = m.panel
-    if (ctx && ctx.netBits && p.sampleBits) return p.sampleBits
-    return vertical ? (p.verticalSample || p.sample) : p.sample
+    if (!vertical) return p.sample
+    return ctx && ctx.netBits && p.sampleBits ? p.sampleBits : (p.verticalSample || p.sample)
 }
 // The lines of a stat on a vertical panel (caption first), as verticalLines() in main.qml.
 function verticalLines(m, compact, vals, ctx) {
     return renderLines(compact && m.panel.verticalCompact ? m.panel.verticalCompact : m.panel.vertical, vals, ctx)
+}
+// The text a stat reserves its width for horizontally (what the m* TextMetrics hold in main.qml).
+function reserveText(m, compact, ctx) {
+    var c = {}, k
+    for (k in ctx) c[k] = ctx[k]
+    for (k in m.panel.reserveCtx) c[k] = m.panel.reserveCtx[k]
+    return panelText(m, compact, false, m.panel.sample, c)
 }
 // The text of a stat in the panel, as statText() in main.qml.
 function panelText(m, compact, vertical, vals, ctx) {
