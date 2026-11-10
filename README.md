@@ -113,7 +113,10 @@ A handle appears on the strip's free edge: the right edge when the widget sits i
 of the panel, the left edge when it sits in the right half (bottom or top edge on a vertical
 panel). Drag it
 and the strip resizes live, compacting and dropping stats as it goes, with a small readout of the
-limit in pixels. The value is saved when you let go. Dragging out to the full length means "no
+limit in pixels. A step down only happens once the pointer has gone at least halfway from where the
+current layout fits to where the next shorter one fits, so a small nudge never makes the strip jump;
+growing back is immediate once a longer layout fits. The value is saved when you let go (what you see
+is what is saved). Dragging out to the full length means "no
 limit", and double-clicking the handle resets to no limit. Adjust mode switches itself off after
 about 12 seconds without interaction, or untick the menu entry.
 

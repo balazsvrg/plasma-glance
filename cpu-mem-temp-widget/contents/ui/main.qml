@@ -643,7 +643,9 @@ PlasmoidItem {
             if (stripLength(3, drop) <= maxLength) return { level: 3, drop: drop }
         return { level: 3, drop: ids.length - 1 }                         // only the first stat is left
     }
-    readonly property var fit: computeFit()
+    // While the handle is dragged the layout follows dragStep() (with a halfway rule for shrinking);
+    // otherwise it follows the saved limit.
+    readonly property var fit: dragging ? dragFit() : computeFit()
     readonly property int lengthLevel: fit.level
     readonly property bool textCompact: lengthLevel >= 2
     readonly property var droppedIds: shownIds().slice(shownIds().length - fit.drop)
@@ -663,14 +665,60 @@ PlasmoidItem {
     // start edge, moving the pointer toward the start makes the strip longer, so the sign flips.
     function dragTo(startLength, startPos, pos) {
         dragLength = startLength + (handleAtStart ? -1 : 1) * (pos - startPos)
+        dragStep()
     }
+    // Every layout the strip can take, from longest to shortest: the four steps with all stats,
+    // then dropping stats one by one at the tightest step.
+    function configs() {
+        var list = []
+        var n = shownIds().length
+        for (var level = 0; level <= 3; ++level) list.push({ level: level, drop: 0, len: stripLength(level, 0) })
+        for (var drop = 1; drop < n; ++drop) list.push({ level: 3, drop: drop, len: stripLength(3, drop) })
+        return list
+    }
+    property int dragCfg: 0                  // index into configs() of the layout shown while dragging
+    function dragFit() {
+        var cfgs = configs()
+        var c = cfgs[Math.min(dragCfg, cfgs.length - 1)]
+        return { level: c.level, drop: c.drop }
+    }
+    function beginDrag(startLength) {
+        var cfgs = configs()
+        var cur = computeFit()
+        dragCfg = 0
+        for (var i = 0; i < cfgs.length; ++i)
+            if (cfgs[i].level === cur.level && cfgs[i].drop === cur.drop) { dragCfg = i; break }
+        dragLength = startLength
+        dragging = true
+    }
+    // Growing is immediate: as soon as a longer layout fits, it is shown. Shrinking is deliberate:
+    // each step down only happens once the pointer has gone at least halfway from where the current
+    // layout fits to where the next shorter one fits, so a small nudge never makes the strip jump.
+    function dragStep() {
+        var cfgs = configs()
+        var limit = Math.max(20, Math.round(dragLength / 5) * 5)             // snap to 5 px
+        var fitIdx = cfgs.length - 1
+        for (var i = 0; i < cfgs.length; ++i) if (cfgs[i].len <= limit) { fitIdx = i; break }
+        if (fitIdx < dragCfg) dragCfg = fitIdx                               // a longer layout fits: grow
+        while (dragCfg < cfgs.length - 1) {
+            var cur = cfgs[dragCfg].len
+            var j = dragCfg + 1
+            while (j < cfgs.length && cfgs[j].len >= cur) ++j                // next strictly shorter layout
+            if (j >= cfgs.length) break
+            if (limit > (cur + cfgs[j].len) / 2) break                         // not yet halfway
+            dragCfg = j
+        }
+    }
+    // The limit that would be saved right now: what is on screen, never shorter than the shown layout.
     function dragMax() {
-        var v = Math.max(20, Math.round(dragLength / 5) * 5)                 // snap to 5 px
+        var cfgs = configs()
+        var limit = Math.max(20, Math.round(dragLength / 5) * 5)
+        var v = Math.max(limit, cfgs[Math.min(dragCfg, cfgs.length - 1)].len)
         return v >= stripLength(0, 0) ? 0 : v
     }
     function finishDrag() {
         if (!dragging) return
-        var v = maxLength
+        var v = dragMax()
         dragging = false
         Plasmoid.configuration.maxLength = v
     }
@@ -953,8 +1001,7 @@ PlasmoidItem {
                 onPressed: function (mouse) {
                     startPos = pointerPos(mouse)
                     startLength = compact.vertical ? layout.implicitHeight : layout.implicitWidth
-                    root.dragLength = startLength
-                    root.dragging = true
+                    root.beginDrag(startLength)
                 }
                 onPositionChanged: function (mouse) {
                     if (pressed) root.dragTo(startLength, startPos, pointerPos(mouse))
