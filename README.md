@@ -11,7 +11,7 @@ CPU 4%  |  RAM 30%  |  35°C
 - Vertical panels: three captioned blocks (`CPU` over `4%`), text shrinks to fit.
 - Click for a popup with used / total memory, average and max temperature, and a per-core
   temperature list (one entry per KDE core sensor; hyperthreads of one physical core read alike).
-- Optional line graphs of all three stats, in the panel (behind the text or inline after it)
+- Optional line graphs of all three stats, in the panel (behind text or inline)
   and in the popup. Off by default.
 - Each temperature turns red when it reaches the configurable threshold.
 - Pure QML. No native code, no background processes: values come from KDE's own
@@ -57,7 +57,7 @@ and per-core temperatures. Turning off the per-core list also stops its sensors.
 
 | Setting | Default |
 |---|---|
-| Panel graphs: Off / Behind the text / Inline, after the text | Off |
+| Panel graphs: Off / Behind text / Inline | Off |
 | Show a graph under each enabled popup item | off |
 | History length: 30 s / 1 min / 5 min | 1 min |
 

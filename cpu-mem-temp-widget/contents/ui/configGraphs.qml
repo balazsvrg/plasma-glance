@@ -20,7 +20,7 @@ KCM.SimpleKCM {
         QQC2.ComboBox {
             id: styleBox
             Kirigami.FormData.label: i18n("Panel graphs:")
-            model: [i18n("Off"), i18n("Behind the text"), i18n("Inline, after the text")]
+            model: [i18n("Off"), i18n("Behind text"), i18n("Inline")]
             onActivated: page.cfg_panelGraphStyle = currentIndex
         }
         // Binding survives user input, so "Defaults" keeps updating the box.
