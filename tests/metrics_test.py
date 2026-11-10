@@ -208,6 +208,11 @@ equal("render: explicit undefined value goes through the formatter", run(M, "ren
 r = M.evaluate("try { render('{v:nosuch}',{v:1},{}); 'no error' } catch (e) { 'threw' }").toString()
 equal("render: unknown format throws", r, "threw")
 equal("render: no vals at all", run(M, "render('{v:pct}',null,{})"), "--")
+equal("render: the same template with different values (parsed once)", run(M, "[1,2,3].map(function(v){return render('n={v} {w:pct}',{v:v,w:v*10},{})})"),
+      ["n=1 10%", "n=2 20%", "n=3 30%"])
+equal("render: an unknown format throws every time", [M.evaluate("try { render('{v:nosuch}',{v:1},{}); 'no error' } catch (e) { 'threw' }").toString() for _ in range(2)],
+      ["threw", "threw"])
+equal("render: adjacent holes and edges of the template", run(M, "render('{a}{b:pct}{a}',{a:'x',b:5},{})"), "x5%x")
 
 equal("temp alert below / at warn", [run(M, "byId('temp').alert({value:%s},%s)" % (v, ctx())) for v in (79.9, 80, 90)], [False, True, True])
 equal("temp alert needs a number", [run(M, "byId('temp').alert({value:%s},%s)" % (v, ctx())) for v in ("undefined", "null", "NaN")], [False] * 3)

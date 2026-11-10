@@ -75,14 +75,33 @@ var FORMATS = {
 }
 
 // Renders "{key:format}" templates. A key missing from vals renders "--"; a format name that does not
-// exist throws (a typo in a descriptor must not turn into silent text).
+// exist throws (a typo in a descriptor must not turn into silent text). A template is split into its parts
+// once and kept (the panel renders the same few templates on every sensor update).
+var PARSED = {}
+function parse(template) {
+    var t = String(template), cached = PARSED[t]
+    if (cached) return cached
+    var parts = [], re = /\{(\w+)(?::(\w+))?\}/g, last = 0, m
+    while ((m = re.exec(t)) !== null) {
+        if (m.index > last) parts.push(t.slice(last, m.index))
+        parts.push({ key: m[1], fmt: m[2], src: t })
+        last = re.lastIndex
+    }
+    if (last < t.length) parts.push(t.slice(last))
+    PARSED[t] = parts
+    return parts
+}
 function render(template, vals, ctx) {
-    return String(template).replace(/\{(\w+)(?::(\w+))?\}/g, function (all, key, fmt) {
-        if (!vals || !(key in vals)) return "--"
-        var f = fmt ? FORMATS[fmt] : FORMATS.raw
-        if (!f) throw new Error("unknown format '" + fmt + "' in template: " + template)
-        return f(vals[key], ctx)
-    })
+    var parts = parse(template), out = ""
+    for (var i = 0; i < parts.length; ++i) {
+        var p = parts[i]
+        if (typeof p === "string") { out += p; continue }
+        if (!vals || !(p.key in vals)) { out += "--"; continue }
+        var f = p.fmt ? FORMATS[p.fmt] : FORMATS.raw
+        if (!f) throw new Error("unknown format '" + p.fmt + "' in template: " + p.src)
+        out += f(vals[p.key], ctx)
+    }
+    return out
 }
 function renderLines(templates, vals, ctx) {
     var out = []
