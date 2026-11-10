@@ -227,7 +227,7 @@ KCM.SimpleKCM {
         Rectangle {
             id: table
             Layout.fillWidth: true
-            implicitHeight: tableContent.implicitHeight + Kirigami.Units.smallSpacing * 2
+            implicitHeight: tableContent.implicitHeight + Kirigami.Units.smallSpacing * 2 + border.width * 2
             Kirigami.Theme.inherit: false
             Kirigami.Theme.colorSet: Kirigami.Theme.View
             color: Kirigami.Theme.backgroundColor
@@ -238,10 +238,13 @@ KCM.SimpleKCM {
 
             ColumnLayout {
                 id: tableContent
+                // Inset by the border width, so the rows and stripes never paint over the outline.
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                anchors.topMargin: Kirigami.Units.smallSpacing
+                anchors.leftMargin: table.border.width
+                anchors.rightMargin: table.border.width
+                anchors.topMargin: table.border.width + Kirigami.Units.smallSpacing
                 spacing: Kirigami.Units.smallSpacing
 
                 // Group headers
