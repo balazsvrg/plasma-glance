@@ -42,6 +42,41 @@ PlasmoidItem {
         if (c[key] !== value) c[key] = value
     }
 
+    // ---- graph scale peaks ----
+    // A graph scale that follows the data (registry: scale.mode, i.e. frequency, network and fan) needs a peak that
+    // outlives the individual values. The peak is state, so it lives here: `peaks` maps a stat id to its current
+    // peak (missing: the scale's floor, the start value). Metrics.js computes every step (M.stepPeak, a pure
+    // function); the three triggers below call stepPeak() exactly where the old per-stat code ran: the frequency
+    // maximum, the network download value and the fan speed changing. `peaks` is replaced, never changed in place,
+    // so a binding that reads a peak is notified; a plain map (not objects created at start-up) also means a step
+    // taken while the item tree is still being created is not lost.
+    property var peaks: ({})
+    function peakOf(id) {
+        var p = peaks[id]
+        return p === undefined ? M.byId(id).scale.floor : p
+    }
+    // What the scale of a stat watches (registry: scale.observe.keys), read live from its sensors.
+    function scaleVals(id) {
+        switch (id) {
+        case "freq": return { max: freqMax.value }
+        case "net":  return { down: netDown.value, up: netUp.value }
+        case "fan":  return { value: fanRpm }
+        }
+        return {}
+    }
+    // One step of a stat's peak. The time that passed since the last step is the refresh interval (the triggers
+    // run once per sensor update), so the decay of the network scale is about 1% per second whatever the rate.
+    function stepPeak(id) {
+        var prev = peakOf(id)
+        var ctx = { barChart: barChart, graphOn: statGraph(id) || statPopupGraph(id) }
+        var next = M.stepPeak(M.byId(id), prev, scaleVals(id), ctx, refreshMs)
+        if (next === prev) return
+        var map = {}
+        for (var k in peaks) map[k] = peaks[k]
+        map[id] = next
+        peaks = map
+    }
+
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
     // A sensor is switched off when nothing shows its stat, so nothing polls for data nobody sees.
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs; enabled: root.showCpu || root.popupCpu }
@@ -59,30 +94,19 @@ PlasmoidItem {
         enabled: root.showFreq || root.popupFreq
         // The hardware maximum is not a sensor, so the frequency graph's scale
         // grows to the highest value seen (never below 1 GHz).
-        onValueChanged: if (root.isNum(value) && value > root.freqPeak) root.freqPeak = value
+        onValueChanged: root.stepPeak("freq")
     }
-    property real freqPeak: 1000
     // Network, all interfaces combined (bytes per second; totals in bytes since boot).
     Sensors.Sensor {
         id: netDown
         sensorId: "network/all/download"
         updateRateLimit: root.refreshMs
         enabled: root.showNet || root.popupNet
-        onValueChanged: root.trackNetPeak()          // once per refresh (upload updates in the same tick)
+        onValueChanged: root.stepPeak("net")         // once per refresh (upload updates in the same tick)
     }
     Sensors.Sensor { id: netUp; sensorId: "network/all/upload"; updateRateLimit: root.refreshMs; enabled: root.showNet || root.popupNet }
     Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
     Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
-    // Network graph scale: rises at once to the highest rate (down or up) and decays about 1% per
-    // second of real time, whatever the refresh rate; never below 100 KB/s. Bar graphs stack download
-    // and upload, so they need the scale to cover the sum; the line graph keeps the higher of the two.
-    property real netPeak: 100000
-    function trackNetPeak() {
-        if (!(gpNet || gdNet)) return                  // the scale only matters to a graph
-        var d = isNum(netDown.value) ? Number(netDown.value) : 0
-        var u = isNum(netUp.value) ? Number(netUp.value) : 0
-        netPeak = Math.max(100000, barChart ? d + u : Math.max(d, u), netPeak * Math.pow(0.99, refreshMs / 1000))
-    }
     // ---- battery ----
     // Data comes from Plasma's power-management engine, the same source KDE's own
     // battery widget uses. (KDE's ksystemstats power sensors lag and disagree with
@@ -226,9 +250,7 @@ PlasmoidItem {
     readonly property var fanRpm: fanRpmMax()
     // 0 stopped, 1 slow, 2 medium, 3 fast: drives the icon's spin speed.
     readonly property int fanLevel: !isNum(fanRpm) || fanRpm <= 0 ? 0 : (fanRpm < 2500 ? 1 : (fanRpm < 4000 ? 2 : 3))
-    // Graph scale: grows to the highest RPM seen, never below 3000.
-    property real fanPeak: 3000
-    onFanRpmChanged: if (isNum(fanRpm) && Number(fanRpm) > fanPeak) fanPeak = Number(fanRpm)
+    onFanRpmChanged: root.stepPeak("fan")
     QtObject { id: fanSensor; readonly property var value: root.fanRpm }
 
     // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
@@ -260,8 +282,6 @@ PlasmoidItem {
     readonly property bool gdFan:  Plasmoid.configuration.graphPopupFan
     readonly property int historySeconds: Math.min(300, Math.max(30, Plasmoid.configuration.historySeconds))
     readonly property int historyLen: Math.max(2, Math.round(historySeconds * 1000 / refreshMs))
-    readonly property real tempYMin: 20                               // temperature graph scale: tempYMin .. tempYMax
-    readonly property real tempYMax: Math.max(100, warnTempC + 10)
 
     component History: Loader {
         id: hist
@@ -596,6 +616,7 @@ PlasmoidItem {
     }
     // The settings the registry's alerts and scales read (Metrics.js is a pure library). Every binding that
     // evaluates an alert or a scale reads this property, so it re-evaluates when the warning temperature changes.
+    // (A peak step also needs barChart and graph flags; stepPeak() reads them when it runs.)
     readonly property var limitCtx: ({ warnTempC: warnTempC })
     // The popup's "max core" temperature is highlighted by its own value (the registry's row alert), so the
     // colour always matches the number shown next to it.
@@ -772,15 +793,15 @@ PlasmoidItem {
         return null
     }
     function statHistory2(id) { return id === "net" ? netUpHist : null }
-    function statYFrom(id) { return id === "temp" ? tempYMin : 0 }
+    // The graph scale of a stat (registry `scale`): fixed, computed from the warning temperature, or the peak kept above.
+    function statYFrom(id) {
+        var m = M.byId(id)
+        return m ? M.scaleFrom(m) : 0
+    }
     function statYTo(id) {
-        switch (id) {
-        case "temp": return tempYMax
-        case "freq": return freqPeak
-        case "net":  return netPeak
-        case "fan":  return fanPeak
-        }
-        return 100
+        var m = M.byId(id)
+        if (!m) return 100
+        return M.scaleEnd(m, limitCtx, M.followsData(m) ? peakOf(id) : 0)
     }
 
     // ---- panel text ----

@@ -147,7 +147,8 @@ for gone in ("function valueText", "function netLines", "function verticalCaptio
              "function rateParts", "function batValue", "function arrowFor", "function tempShort", "function freqShort",
              "function rpmNumber", "function tempNumber", "function rateShort", "function batText",
              "TextMetrics { id: mCpu", "TextMetrics { id: mFan", "TextMetrics { id: mNet", "TextMetrics { id: mTemp",
-             "property bool avgHot", "property bool batLow"):
+             "property bool avgHot", "property bool batLow", "property real freqPeak", "property real netPeak",
+             "property real fanPeak", "function trackNetPeak", "tempYMin", "tempYMax"):
     check("main.qml no longer has `%s`" % gone, gone not in MAIN_QML)
 check("statText delegates to M.panelText", "M.panelText(m, compact, vert, statVals(id), textCtx)" in MAIN_QML)
 check("verticalLines delegates to M.verticalLines", "M.verticalLines(m, compact," in MAIN_QML)
@@ -158,6 +159,20 @@ check("the icon width comes from the registry's decoration", 'm.panel.decoration
 check("statAlert delegates to M.alertOf", "M.alertOf(m, statVals(id), limitCtx)" in MAIN_QML)
 check("the popup's max-core alert is the registry's row alert", 'M.byId("temp").popup.rows[1].alert(' in MAIN_QML)
 check("limitCtx carries exactly the warning temperature", re.search(r'limitCtx: \(\{ warnTempC: warnTempC \}\)', MAIN_QML) is not None)
+check("statYTo asks the registry for the scale end", "M.scaleEnd(m, limitCtx, M.followsData(m) ? peakOf(id) : 0)" in MAIN_QML)
+check("statYFrom asks the registry", "M.scaleFrom(m)" in MAIN_QML)
+check("the peak step is the registry's", "M.stepPeak(M.byId(id), prev, scaleVals(id), ctx, refreshMs)" in MAIN_QML)
+# The three triggers of a peak step stay where the old per-stat code ran, and nowhere else.
+equal("peak triggers", sorted(re.findall(r'stepPeak\("(\w+)"\)', MAIN_QML)), ["fan", "freq", "net"])
+check("freq steps from the maximum-frequency sensor", re.search(r'id: freqMax.*?onValueChanged: root\.stepPeak\("freq"\)', MAIN_QML, re.S) is not None)
+check("net steps from the download sensor", re.search(r'id: netDown.*?onValueChanged: root\.stepPeak\("net"\)', MAIN_QML, re.S) is not None)
+check("fan steps from the fan speed", 'onFanRpmChanged: root.stepPeak("fan")' in MAIN_QML)
+# scaleVals() hands each following scale the keys the registry says it watches.
+sv = re.search(r'function scaleVals\(id\) \{(.*?)\n    \}', MAIN_QML, re.S).group(1)
+watched = {sid: sorted(re.findall(r'(\w+):', body)) for sid, body in re.findall(r'case "(\w+)":\s+return \{(.*?)\}', sv)}
+equal("scaleVals covers exactly the following scales", sorted(watched), run(M, "METRICS.filter(followsData).map(function(m){return m.id}).sort()"))
+for sid, keys in watched.items():
+    equal("scaleVals of %s supplies the keys its scale observes" % sid, keys, sorted(run(M, "byId(%s).scale.observe.keys" % json.dumps(sid))))
 # The settings the formatters read must be the ones main.qml puts into the context: a formatter that starts
 # reading another setting would silently get undefined.
 fmt_src = re.search(r'var FORMATS = \{(.*?)\n\}\n', METRICS_JS, re.S).group(1) + re.search(r'function rateParts.*?\n\}\nfunction tempNumber.*?\n\}', METRICS_JS, re.S).group(0)
@@ -326,11 +341,8 @@ equal("per-core sensor pattern", run(M, "byId('temp').popup.repeat.sensor"), "cp
 check("main.qml builds the per-core id the same way", '"cpu/cpu" + coreRow.index + "/temperature"' in MAIN_QML)
 equal("fan discovery pattern equals main.qml's", "/" + run(M, "byId('fan').source.pattern").replace("/", "\\/") + "/",
       "/" + re.search(r'if \(/(.*?)/\.test\(id\)\)', MAIN_QML).group(1) + "/")
-# Constants of the scales and the fan discovery, as written in main.qml.
-for what, snippet in (("temp scale start", "tempYMin: 20"), ("temp scale end", "Math.max(100, warnTempC + 10)"),
-                      ("net floor and decay", "Math.max(100000, barChart ? d + u : Math.max(d, u), netPeak * Math.pow(0.99, refreshMs / 1000))"),
-                      ("freq floor", "property real freqPeak: 1000"), ("fan floor", "property real fanPeak: 3000"),
-                      ("battery refresh", "interval: 5000"),
+# Constants of the battery refresh and the fan discovery, as written in main.qml.
+for what, snippet in (("battery refresh", "interval: 5000"),
                       ("fan attempts", "readonly property int maxAttempts: 10"), ("fan first scan", "interval: 800"),
                       ("fan retry", "fanScan.interval = 3000")):
     check("main.qml still says: %s" % what, snippet in MAIN_QML)
