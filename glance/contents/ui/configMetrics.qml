@@ -135,6 +135,12 @@ KCM.SimpleKCM {
         for (var i = 0; i < orderModel.count; ++i) ids.push(orderModel.get(i).statId)
         return ids.join(",")
     }
+    // The nearest row in direction dir (-1 up, +1 down) that is actually shown, or -1 at the ends.
+    function stepTarget(from, dir) {
+        for (var i = from + dir; i >= 0 && i < orderModel.count; i += dir)
+            if (rowAvailable(orderModel.get(i).statId)) return i
+        return -1
+    }
     function moveRow(from, to) {
         if (from === to || to < 0 || to >= orderModel.count) return
         orderModel.move(from, to, 1)
@@ -371,15 +377,15 @@ KCM.SimpleKCM {
                                     CfgCheck { key: slot.info.popupGraph }
                                     QQC2.ToolButton {
                                         icon.name: "arrow-up"
-                                        enabled: slot.index > 0
-                                        onClicked: page.moveRow(slot.index, slot.index - 1)
+                                        enabled: page.stepTarget(slot.index, -1) >= 0
+                                        onClicked: page.moveRow(slot.index, page.stepTarget(slot.index, -1))
                                         QQC2.ToolTip.text: i18n("Move up")
                                         QQC2.ToolTip.visible: hovered
                                     }
                                     QQC2.ToolButton {
                                         icon.name: "arrow-down"
-                                        enabled: slot.index < orderModel.count - 1
-                                        onClicked: page.moveRow(slot.index, slot.index + 1)
+                                        enabled: page.stepTarget(slot.index, 1) >= 0
+                                        onClicked: page.moveRow(slot.index, page.stepTarget(slot.index, 1))
                                         QQC2.ToolTip.text: i18n("Move down")
                                         QQC2.ToolTip.visible: hovered
                                     }
