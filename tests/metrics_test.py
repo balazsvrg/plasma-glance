@@ -148,7 +148,9 @@ for gone in ("function valueText", "function netLines", "function verticalCaptio
              "function rpmNumber", "function tempNumber", "function rateShort", "function batText",
              "TextMetrics { id: mCpu", "TextMetrics { id: mFan", "TextMetrics { id: mNet", "TextMetrics { id: mTemp",
              "property bool avgHot", "property bool batLow", "property real freqPeak", "property real netPeak",
-             "property real fanPeak", "function trackNetPeak", "tempYMin", "tempYMax"):
+             "property real fanPeak", "function trackNetPeak", "tempYMin", "tempYMax", "History { id: cpuHistory",
+             "History { id: netDownHistory", "History { id: batHistory", "property var cpuHist", "property var netUpHist",
+             "var all = [cpuHistory"):
     check("main.qml no longer has `%s`" % gone, gone not in MAIN_QML)
 check("statText delegates to M.panelText", "M.panelText(m, compact, vert, statVals(id), textCtx)" in MAIN_QML)
 check("verticalLines delegates to M.verticalLines", "M.verticalLines(m, compact," in MAIN_QML)
@@ -173,6 +175,14 @@ watched = {sid: sorted(re.findall(r'(\w+):', body)) for sid, body in re.findall(
 equal("scaleVals covers exactly the following scales", sorted(watched), run(M, "METRICS.filter(followsData).map(function(m){return m.id}).sort()"))
 for sid, keys in watched.items():
     equal("scaleVals of %s supplies the keys its scale observes" % sid, keys, sorted(run(M, "byId(%s).scale.observe.keys" % json.dumps(sid))))
+# One History per registry series, created from the registry (not one hand-written item per stat).
+check("the histories come from the registry's series", "model: root.historyKinds" in MAIN_QML and "M.METRICS[i].series[j]" in MAIN_QML)
+check("a history is wanted by the stat's graph and shown flags", "wanted: root.historyWanted(modelData.id)" in MAIN_QML)
+hs = re.search(r'historySensors: \(\{(.*?)\}\)', MAIN_QML, re.S).group(1)
+equal("every registry series has a sensor object for its history",
+      sorted(re.findall(r'"(\w+\.\w+)":', hs)),
+      sorted(run(M, "(function(){var o=[];METRICS.forEach(function(m){m.series.forEach(function(s){o.push(m.id+'.'+s)})});return o})()")))
+check("statHistory and statHistory2 take the first and second series", "historyOf(id, m.series[0])" in MAIN_QML and "historyOf(id, m.series[1])" in MAIN_QML)
 # The settings the formatters read must be the ones main.qml puts into the context: a formatter that starts
 # reading another setting would silently get undefined.
 fmt_src = re.search(r'var FORMATS = \{(.*?)\n\}\n', METRICS_JS, re.S).group(1) + re.search(r'function rateParts.*?\n\}\nfunction tempNumber.*?\n\}', METRICS_JS, re.S).group(0)

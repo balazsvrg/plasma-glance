@@ -285,6 +285,8 @@ PlasmoidItem {
 
     component History: Loader {
         id: hist
+        property string statId                // registry id and series name: how the history is looked up
+        property string series
         property var sensor
         property bool wanted: false
         property bool ready: false          // latched once the sensor has reported a number
@@ -328,30 +330,56 @@ PlasmoidItem {
         }
     }
 
-    History { id: cpuHistory;  sensor: cpuUsage;  wanted: (root.gpCpu && root.showCpu)  || (root.gdCpu && root.popupCpu) }
-    History { id: ramHistory;  sensor: memPercent; wanted: (root.gpRam && root.showRam)  || (root.gdRam && root.popupMemory) }
-    History { id: tempHistory; sensor: tempAvg;   wanted: (root.gpTemp && root.showTemp) || (root.gdTemp && root.popupTempAvg) }
-    History { id: freqHistory; sensor: freqAvg;   wanted: (root.gpFreq && root.showFreq) || (root.gdFreq && root.popupFreq) }
-    History { id: netDownHistory; sensor: netDown; wanted: (root.gpNet && root.showNet) || (root.gdNet && root.popupNet) }
-    History { id: netUpHistory;   sensor: netUp;   wanted: netDownHistory.wanted }
-    History { id: fanHistory;     sensor: fanSensor; wanted: (root.gpFan && root.fanShown) || (root.gdFan && root.popupFanShown) }
-    History { id: batHistory;     sensor: batSensor; wanted: (root.gpBat && root.batShown) || (root.gdBat && root.popupBatShown) }
-
-    readonly property var cpuHist:  cpuHistory.historySource
-    readonly property var ramHist:  ramHistory.historySource
-    readonly property var tempHist: tempHistory.historySource
-    readonly property var freqHist: freqHistory.historySource
-    readonly property var netDownHist: netDownHistory.historySource
-    readonly property var netUpHist: netUpHistory.historySource
-    readonly property var batHist: batHistory.historySource
-    readonly property var fanHist: fanHistory.historySource
-    // The bar graphs' sample store belonging to one of the history sources above.
+    // One History per series of each registry entry (`series`: net has two, down and up), created by the Repeater
+    // below. A History exists (is active) only while a graph of its stat is enabled (see historyWanted) and its
+    // sensor has reported a number; the sample stores fill whenever it is active. The lookups below find a
+    // History by stat id and series name. historyItems is a property that is reassigned as the delegates are
+    // created, so a lookup made before they existed is made again once they do.
+    property var historyItems: []
+    readonly property var historyKinds: {
+        var list = []
+        for (var i = 0; i < M.METRICS.length; ++i)
+            for (var j = 0; j < M.METRICS[i].series.length; ++j)
+                list.push({ id: M.METRICS[i].id, series: M.METRICS[i].series[j] })
+        return list
+    }
+    // Where each series' values come from: "<id>.<series>" -> an object with a `value` (the sensor items).
+    readonly property var historySensors: ({
+        "cpu.value": cpuUsage, "ram.value": memPercent, "temp.value": tempAvg, "freq.value": freqAvg,
+        "net.down": netDown, "net.up": netUp, "bat.percent": batSensor, "fan.value": fanSensor
+    })
+    Repeater {
+        id: historyRepeater
+        model: root.historyKinds
+        delegate: History {
+            required property var modelData
+            statId: modelData.id
+            series: modelData.series
+            sensor: root.historySensors[modelData.id + "." + modelData.series]
+            wanted: root.historyWanted(modelData.id)
+        }
+        onItemAdded: root.historyItems = historyList()
+        function historyList() {
+            var list = []
+            for (var i = 0; i < count; ++i) { var it = itemAt(i); if (it) list.push(it) }
+            return list
+        }
+    }
+    // A history is collected while a graph that shows the stat is enabled: the panel graph while the stat is shown
+    // in the panel, the popup graph while its popup row is on. All series of a stat share the condition.
+    function historyWanted(id) {
+        return (statGraph(id) && statShown(id)) || (statPopupGraph(id) && statPopupOn(id))
+    }
+    function historyOf(id, series) {
+        for (var i = 0; i < historyItems.length; ++i)
+            if (historyItems[i].statId === id && historyItems[i].series === series) return historyItems[i]
+        return null
+    }
+    // The bar graphs' sample store belonging to one of the history sources.
     function sampleStoreOf(source) {
         if (!source) return null
-        var all = [cpuHistory, ramHistory, tempHistory, freqHistory, netDownHistory, netUpHistory, fanHistory, batHistory]
-        for (var i = 0; i < all.length; ++i) {
-            if (all[i].historySource === source) return all[i].sampleStore
-        }
+        for (var i = 0; i < historyItems.length; ++i)
+            if (historyItems[i].historySource === source) return historyItems[i].sampleStore
         return null
     }
 
@@ -698,6 +726,19 @@ PlasmoidItem {
         }
         return false
     }
+    // Whether the stat's row is on in the popup (its popup flag, and the battery / fan exists).
+    function statPopupOn(id) {
+        switch (id) {
+        case "cpu":  return popupCpu
+        case "ram":  return popupMemory
+        case "temp": return popupTempAvg
+        case "freq": return popupFreq
+        case "net":  return popupNet
+        case "bat":  return popupBatShown
+        case "fan":  return popupFanShown
+        }
+        return false
+    }
     function shownIds() {
         var ids = []
         for (var i = 0; i < statOrder.length; ++i) if (statShown(statOrder[i])) ids.push(statOrder[i])
@@ -780,19 +821,15 @@ PlasmoidItem {
     }
     function statTextColor(id) { return statAlert(id) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor }
     function statLineColor(id) { return statAlert(id) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor }
+    // The history of a stat's first series (and of its second, e.g. upload): null while no graph needs it.
     function statHistory(id) {
-        switch (id) {
-        case "cpu":  return cpuHist
-        case "ram":  return ramHist
-        case "temp": return tempHist
-        case "freq": return freqHist
-        case "net":  return netDownHist
-        case "bat":  return batHist
-        case "fan":  return fanHist
-        }
-        return null
+        var m = M.byId(id), h = m ? historyOf(id, m.series[0]) : null
+        return h ? h.historySource : null
     }
-    function statHistory2(id) { return id === "net" ? netUpHist : null }
+    function statHistory2(id) {
+        var m = M.byId(id), h = m && m.series.length > 1 ? historyOf(id, m.series[1]) : null
+        return h ? h.historySource : null
+    }
     // The graph scale of a stat (registry `scale`): fixed, computed from the warning temperature, or the peak kept above.
     function statYFrom(id) {
         var m = M.byId(id)
