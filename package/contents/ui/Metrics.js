@@ -3,8 +3,10 @@
 // Metrics registry: one declarative entry per stat, plus the pure helpers that turn an entry's
 // templates into panel / popup text.
 //
-// STATUS: data and helpers only. Nothing in the widget imports this file yet; main.qml still has
-// its own copies of every format. tests/metrics_test.py proves that the two agree.
+// STATUS: main.qml takes its panel text (statText, verticalLines) and its horizontal width reserves from
+// this file; the rest of a descriptor (keys, sensors, scale, alert, popup rows) is not used by the widget
+// yet and is checked against it by tests/metrics_test.py. This is a .pragma library: the functions are pure
+// and see no QML properties, so the caller passes every setting in through ctx and every value through vals.
 //
 // Descriptor fields (a field is present only when the stat needs it):
 //   id        short id used in statOrder ("cpu", "ram", ...)
@@ -32,7 +34,7 @@ function isNum(v) {
     return v !== undefined && v !== null && v !== "" && isFinite(Number(v))
 }
 
-// ---- formatters (ported 1:1 from main.qml; settings come in through ctx instead of root) ----
+// ---- formatters (settings come in through ctx) ----
 function rateParts(v, ctx) {
     var bits = !!(ctx && ctx.netBits)
     var x = bits ? Number(v) * 8 : Number(v)
@@ -303,18 +305,18 @@ function sampleVals(m, vertical, ctx) {
     if (!vertical) return p.sample
     return ctx && ctx.netBits && p.sampleBits ? p.sampleBits : (p.verticalSample || p.sample)
 }
-// The lines of a stat on a vertical panel (caption first), as verticalLines() in main.qml.
+// The lines of a stat on a vertical panel (caption first).
 function verticalLines(m, compact, vals, ctx) {
     return renderLines(compact && m.panel.verticalCompact ? m.panel.verticalCompact : m.panel.vertical, vals, ctx)
 }
-// The text a stat reserves its width for horizontally (what the m* TextMetrics hold in main.qml).
+// The text a stat reserves its width for horizontally (main.qml measures it with TextMetrics).
 function reserveText(m, compact, ctx) {
     var c = {}, k
     for (k in ctx) c[k] = ctx[k]
     for (k in m.panel.reserveCtx) c[k] = m.panel.reserveCtx[k]
     return panelText(m, compact, false, m.panel.sample, c)
 }
-// The text of a stat in the panel, as statText() in main.qml.
+// The text of a stat in the panel (statText() in main.qml).
 function panelText(m, compact, vertical, vals, ctx) {
     if (vertical) return verticalLines(m, compact, vals, ctx).join("\n")
     return render(compact ? m.panel.compact : m.panel.full, vals, ctx)
