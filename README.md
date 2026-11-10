@@ -62,7 +62,7 @@ cd plasma-glance
 If you were given a `.plasmoid` file (or built one with `./package.sh`, see below):
 
 ```
-kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.5.plasmoid
+kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.6.plasmoid
 ```
 
 Use `-u` instead of `-i` to upgrade an installed copy. You can also do it from Plasma: right-click the
@@ -71,7 +71,7 @@ panel, choose **Add Widgets**, then **Get New Widgets > Install from Local File*
 To install it for every user on the machine, add `-g` and run the command as root:
 
 ```
-sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.5.plasmoid
+sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.6.plasmoid
 ```
 
 ### Then load it into Plasma
@@ -262,6 +262,14 @@ install.sh / uninstall.sh
 ```
 
 ## Changelog
+
+**0.6**
+- Renamed to **Glance**. The internal plugin ID is unchanged, so an existing panel widget keeps working
+  with all its settings; the folder is now `glance/`.
+- A full installation guide in this README, and `package.sh` to build a `.plasmoid` file.
+- Cleanup and efficiency: sensors that nothing shows are switched off, hidden stats build no cells, the
+  popup graphs share one component, and the drag no longer recomputes its layouts on every mouse move.
+  Nothing should look different.
 
 **0.5**
 - Reorder the stats: the Metrics tab is a table whose rows can be dragged (or moved with arrows). The order
