@@ -568,6 +568,25 @@ for stat in ("freq", "fan"):
         equal("%s peak, sequence '%s'" % (stat, name), got, want)
 check("scale golden data was compared (%d values)" % compared, compared > 3000)
 
+# ---- popup descriptors (P4 step 1: the helpers the generic popup will use) ----
+pflags = lambda **k: json.dumps(dict(dict(popup=False, opts={}, available={"hasBattery": True, "hasFan": True}), **k))
+pon = lambda sid, **k: run(M, "popupOn(byId(%s),%s)" % (json.dumps(sid), pflags(**k)))
+equal("popupOn follows the popup flag", [pon("cpu"), pon("cpu", popup=True)], [False, True])
+equal("temp has a popup when any of its options is on", [pon("temp"), pon("temp", opts={"popupMax": True}), pon("temp", opts={"popupCores": True}),
+      pon("temp", popup=True), pon("temp", opts={"separate": True})], [False, True, True, True, False])
+equal("battery and fan popups also need the hardware", [pon("bat", popup=True, available={"hasBattery": False}), pon("bat", popup=True),
+      pon("fan", popup=True, available={"hasFan": False}), pon("fan", popup=True)], [False, True, False, True])
+equal("popup hardware checks", run(M, "METRICS.filter(function(m){return m.popup.available}).map(function(m){return m.id+':'+m.popup.available}).join()"), "bat:hasBattery,fan:hasFan")
+equal("popup flag names per stat", run(M, "METRICS.map(function(m){return m.id+':'+popupFlagNames(m).join('+')}).join(' ')"),
+      "cpu: ram: temp:popup+popupMax+popupCores freq: net: bat: fan:")
+equal("temp rows follow their flags", [run(M, "popupRowShown(byId('temp').popup.rows[%d],%s)" % (i, pflags(**k)))
+      for i, k in ((0, {}), (0, {"popup": True}), (1, {}), (1, {"opts": {"popupMax": True}}))], [False, True, False, True])
+equal("temp graph needs the average row", [run(M, "popupGraphShown(byId('temp'),%s)" % pflags(**k)) for k in ({}, {"popup": True})], [False, True])
+equal("a stat without graphWhen shows its graph with its popup", run(M, "popupGraphShown(byId('cpu'),%s)" % pflags()), True)
+equal("every row's flag is the popup flag or one of the stat's options", run(M, "METRICS.every(function(m){return popupFlagNames(m).every(function(f){return f==='popup'||(m.keys.options&&f in m.keys.options)})})"), True)
+equal("the widest popup label is the one the name column is sized from", run(M, "popupLabels(METRICS).sort(function(a,b){return b.length-a.length})[0]"), "CPU temp (max core)")
+check("every popup row alert is 'panel' or a function", run(M, "METRICS.every(function(m){return m.popup.rows.every(function(r){return r.alert===undefined||r.alert==='panel'||typeof r.alert==='function'})})"))
+
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))
 if failures:

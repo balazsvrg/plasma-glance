@@ -32,7 +32,12 @@
 //                           (a stat without one, the fan, steps from its own value change)
 //   alert     function(vals, ctx) -> bool: the panel text turns red
 //   series    keys of vals drawn as graph series ([value] or [down, up]): one history per series
-//   popup     rows: [{ label, value, when, alert }], graph: bool, hooks: names of bespoke parts
+//   popup     rows: [{ label, value, when, alert, decoration }], graph: bool, graphWhen, hooks: names of bespoke parts,
+//             repeat: one line per item (per-core temperatures), available: name of a hardware check ("hasBattery",
+//             "hasFan") the stat's popup also needs. when / graphWhen / repeat.when name a flag: "popup" (keys.popup)
+//             or an option name (keys.options); no when means the row is shown whenever the stat's popup is.
+//             alert is "panel" (the panel's rule) or a function(vals, ctx). decoration "fanIcon" puts the fan icon
+//             before the value.
 // Template syntax: "{key:format}" (see FORMATS); any other text is copied as is.
 
 var DEFAULT_ORDER = ["cpu", "ram", "temp", "freq", "net", "bat", "fan"]
@@ -287,7 +292,7 @@ var METRICS = [
         series: ["percent"],
         popup: {
             rows: [{ label: "Battery", value: "{percent:pct}{state:arrowSp}{energy:whParen}", alert: "panel" }],
-            graph: true,
+            graph: true, available: "hasBattery",
             // per-battery lines ("each battery separately"), and the charging / time-left row
             hooks: ["perBattery", "chargeRow"]
         }
@@ -319,7 +324,7 @@ var METRICS = [
         series: ["value"],
         popup: {
             rows: [{ label: "Fan", value: "{value:rpm} RPM", decoration: "fanIcon" }],
-            graph: true
+            graph: true, available: "hasFan"
         }
     }
 ]
@@ -416,6 +421,42 @@ function panelSensorNames(m) {
     var names = []
     for (var name in m.sensors) if (m.sensors[name].gate.indexOf("show") === 0) names.push(name)
     return names
+}
+
+// ---- popup ----
+// Flags: { popup: bool, opts: { <option name>: bool }, available: { hasBattery: bool, hasFan: bool } }.
+function flagOn(flag, flags) {
+    if (flag === undefined) return true
+    return flag === "popup" ? !!flags.popup : !!(flags.opts && flags.opts[flag])
+}
+// The flags (other than "popup") whose options show something in the stat's popup.
+function popupFlagNames(m) {
+    var names = [], p = m.popup
+    for (var i = 0; i < p.rows.length; ++i) if (p.rows[i].when) names.push(p.rows[i].when)
+    if (p.repeat && p.repeat.when) names.push(p.repeat.when)
+    return names
+}
+// Whether the stat has anything in the popup: its popup flag, or an option that shows a row (temperature), and
+// the hardware check the descriptor names.
+function popupOn(m, flags) {
+    var p = m.popup
+    if (p.available && !(flags.available && flags.available[p.available])) return false
+    if (flags.popup) return true
+    var names = popupFlagNames(m)
+    for (var i = 0; i < names.length; ++i) if (flagOn(names[i], flags)) return true
+    return false
+}
+function popupRowShown(row, flags) { return flagOn(row.when, flags) }
+function popupGraphShown(m, flags) { return !!m.popup.graph && flagOn(m.popup.graphWhen, flags) }
+// Every label the popup's name column can show (its width is the widest).
+function popupLabels(list) {
+    var labels = []
+    for (var i = 0; i < list.length; ++i) {
+        var p = list[i].popup
+        for (var j = 0; j < p.rows.length; ++j) labels.push(p.rows[j].label)
+        if (p.repeat) labels.push(p.repeat.label.replace("{n}", "10"))
+    }
+    return labels
 }
 
 // ---- sensor gating ----
