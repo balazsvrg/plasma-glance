@@ -3,9 +3,7 @@
 Your machine at a glance: a compact KDE Plasma 6 panel widget that puts CPU usage, memory,
 temperature and more in one strip, with a details popup.
 
-```
-CPU 4%  |  RAM 30%  |  35°C  |  ↓12 KB/s ↑3 KB/s  |  BAT 62% ↑
-```
+![Glance in a Plasma panel: CPU, temperature, memory, frequency, network, fan and battery](docs/images/glance-panel.png)
 
 - **Stats:** CPU usage, memory and CPU temperature by default. CPU frequency, network speed, battery
   and fan speed (with a spinning fan icon) can be switched on. Battery and fan only appear on
