@@ -503,7 +503,9 @@ PlasmoidItem {
     // the first step that fits:
     //   0  full text, graphs as chosen
     //   1  inline graphs become behind-text graphs (those take no length)
-    //   2  compact text (CPU 8% -> C 8%, 2.2 GHz -> 2.2G, ...), still readable
+    //   2  compact text (CPU 8% -> C 8%, 2.2 GHz -> 2.2G, ...), still readable (horizontal panels only:
+    //      on a vertical panel compact text saves no length, so levelList() skips this step and a stat is
+    //      shortened only when its own text is wider than the panel, see statCompact)
     //   3  tight spacing
     // If even that is too long, stats are dropped from the end of the user's order (Fan, Battery, Net,
     // Freq, Temp, RAM in the default order) until it fits. The first stat in the order is never dropped.
@@ -603,7 +605,7 @@ PlasmoidItem {
     // Widest line of a stat's text on a vertical panel (what must fit in the panel's thickness): the
     // worst-case lines of verticalLines, so the width and the text come from the same code.
     function verticalWidth(id) {
-        void fm.height                       // re-measure when the font changes (advanceWidth is not bindable)
+        void fm.font                         // re-measure when the font changes (advanceWidth is not bindable)
         var lines = verticalLines(id, false, true), w = 0
         for (var i = 0; i < lines.length; ++i) w = Math.max(w, fm.advanceWidth(lines[i]))
         if (id === "fan") w = Math.max(w, Kirigami.Units.iconSizes.smallMedium)
@@ -615,6 +617,8 @@ PlasmoidItem {
     // full text being wider than the panel (shortening saves no length there, so it is not a length step).
     function statCompact(id) {
         if (!vertical) return lengthLevel >= 2
+        // Only these three have a shorter form; measuring the rest could never change their text.
+        if (id !== "temp" && id !== "freq" && id !== "bat") return false
         return panelThickness > 0 && verticalWidth(id) > panelThickness - Kirigami.Units.smallSpacing * 2
     }
 
@@ -664,7 +668,7 @@ PlasmoidItem {
         case "cpu":  return sample ? 100 : cpuUsage.value
         case "ram":  return sample ? 100 : memPercent.value
         case "temp": return sample ? 100 : tempAvg.value
-        case "freq": return sample ? 9999 : freqAvg.value
+        case "freq": return sample ? 9900 : freqAvg.value      // 9.9 GHz, as the horizontal reserve
         case "bat":  return sample ? 100 : batPercent
         case "fan":  return sample ? 9999 : fanRpm
         }
