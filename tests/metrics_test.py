@@ -146,7 +146,8 @@ check("main.qml imports Metrics.js", re.search(r'^import "Metrics\.js" as M$', M
 for gone in ("function valueText", "function netLines", "function verticalCaption", "function statValue", "function netText",
              "function rateParts", "function batValue", "function arrowFor", "function tempShort", "function freqShort",
              "function rpmNumber", "function tempNumber", "function rateShort", "function batText",
-             "TextMetrics { id: mCpu", "TextMetrics { id: mFan", "TextMetrics { id: mNet", "TextMetrics { id: mTemp"):
+             "TextMetrics { id: mCpu", "TextMetrics { id: mFan", "TextMetrics { id: mNet", "TextMetrics { id: mTemp",
+             "property bool avgHot", "property bool batLow"):
     check("main.qml no longer has `%s`" % gone, gone not in MAIN_QML)
 check("statText delegates to M.panelText", "M.panelText(m, compact, vert, statVals(id), textCtx)" in MAIN_QML)
 check("verticalLines delegates to M.verticalLines", "M.verticalLines(m, compact," in MAIN_QML)
@@ -154,6 +155,9 @@ check("the horizontal reserve is rendered by M.reserveText", "text: M.reserveTex
 check("the reserve items come from the registry's entries", "M.METRICS.length" in MAIN_QML and "model: root.reserveKinds" in MAIN_QML)
 check("statCompact asks the registry which stats have a shorter vertical form", "m.panel.verticalCompact" in MAIN_QML)
 check("the icon width comes from the registry's decoration", 'm.panel.decoration === "fanIcon"' in MAIN_QML)
+check("statAlert delegates to M.alertOf", "M.alertOf(m, statVals(id), limitCtx)" in MAIN_QML)
+check("the popup's max-core alert is the registry's row alert", 'M.byId("temp").popup.rows[1].alert(' in MAIN_QML)
+check("limitCtx carries exactly the warning temperature", re.search(r'limitCtx: \(\{ warnTempC: warnTempC \}\)', MAIN_QML) is not None)
 # The settings the formatters read must be the ones main.qml puts into the context: a formatter that starts
 # reading another setting would silently get undefined.
 fmt_src = re.search(r'var FORMATS = \{(.*?)\n\}\n', METRICS_JS, re.S).group(1) + re.search(r'function rateParts.*?\n\}\nfunction tempNumber.*?\n\}', METRICS_JS, re.S).group(0)
@@ -326,7 +330,7 @@ equal("fan discovery pattern equals main.qml's", "/" + run(M, "byId('fan').sourc
 for what, snippet in (("temp scale start", "tempYMin: 20"), ("temp scale end", "Math.max(100, warnTempC + 10)"),
                       ("net floor and decay", "Math.max(100000, barChart ? d + u : Math.max(d, u), netPeak * Math.pow(0.99, refreshMs / 1000))"),
                       ("freq floor", "property real freqPeak: 1000"), ("fan floor", "property real fanPeak: 3000"),
-                      ("battery low", "batPercent < 15 && batState <= 0"), ("battery refresh", "interval: 5000"),
+                      ("battery refresh", "interval: 5000"),
                       ("fan attempts", "readonly property int maxAttempts: 10"), ("fan first scan", "interval: 800"),
                       ("fan retry", "fanScan.interval = 3000")):
     check("main.qml still says: %s" % what, snippet in MAIN_QML)

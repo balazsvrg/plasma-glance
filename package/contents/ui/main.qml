@@ -116,7 +116,6 @@ PlasmoidItem {
     readonly property var batPercent: isNum(batterySummary["Percent"]) ? Number(batterySummary["Percent"]) : undefined
     readonly property int batState: batterySummary["State"] === "Charging" ? 1
                                     : (batterySummary["State"] === "Discharging" ? -1 : 0)
-    readonly property bool batLow: isNum(batPercent) && batPercent < 15 && batState <= 0
     function batEnergyTotal() {          // Wh held across all batteries
         var total = 0, any = false
         for (var i = 0; i < batterySources.length; ++i) {
@@ -595,10 +594,12 @@ PlasmoidItem {
         if (batState === 0 || !isNum(ms) || Number(ms) <= 0) return ""
         return hoursText(Number(ms) / 3600000)
     }
-    // Each temperature is highlighted by its own value, so the colour always
-    // matches the number shown next to it.
-    readonly property bool avgHot: isNum(tempAvg.value) && tempAvg.value >= warnTempC
-    readonly property bool tempHot: isNum(tempMax.value) && tempMax.value >= warnTempC
+    // The settings the registry's alerts and scales read (Metrics.js is a pure library). Every binding that
+    // evaluates an alert or a scale reads this property, so it re-evaluates when the warning temperature changes.
+    readonly property var limitCtx: ({ warnTempC: warnTempC })
+    // The popup's "max core" temperature is highlighted by its own value (the registry's row alert), so the
+    // colour always matches the number shown next to it.
+    readonly property bool tempHot: M.byId("temp").popup.rows[1].alert({ max: tempMax.value }, limitCtx)
 
     // Every shown stat, in the user's order, as the panel writes it (also the ones hidden by the maximum length).
     function tooltipText() {
@@ -749,7 +750,13 @@ PlasmoidItem {
     }
 
     // Per-stat colours, history and graph scale, so a panel cell needs nothing but its id.
-    function statAlert(id) { return (id === "temp" && avgHot) || (id === "bat" && batLow) }
+    // Whether a stat is in its alert state (the registry's `alert`: temperature at or above the warning, battery
+    // low). A stat without an alert reads none of its values, so its colour bindings do not follow its sensor.
+    function statAlert(id) {
+        var m = M.byId(id)
+        if (!m || !m.alert) return false
+        return M.alertOf(m, statVals(id), limitCtx)
+    }
     function statTextColor(id) { return statAlert(id) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor }
     function statLineColor(id) { return statAlert(id) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor }
     function statHistory(id) {
