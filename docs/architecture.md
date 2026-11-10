@@ -48,9 +48,10 @@ tests/golden/                    the panel text of release v0.9.1 (panel_text.js
 `contents/ui/Metrics.js` is a registry that describes each stat as data: its labels, settings keys and
 defaults, sensors and when they are polled, panel text templates (full, compact, vertical), worst-case
 samples, graph scale, alert rule and popup rows, plus the pure formatting helpers that render those templates.
-`main.qml` takes its panel text and its horizontal width reserves from it (section 4); the settings pages, the
-alert rules, the graph scales, the sensors and the popup rows still carry their own copies of the rest, which
-the registry also describes and the tests compare with the code (section 14 lists what a new stat still needs).
+`main.qml` takes its panel text and its horizontal width reserves (section 4), its alerts, scales and histories
+(section 8) and its plain sensors (sections 2 and 11) from it; the settings pages and the popup rows still carry
+their own copies of the rest, which the registry also describes and the tests compare with the code (section 14
+lists what a new stat still needs).
 `tests/metrics_test.py` checks the registry against the golden data in `tests/golden/`, which holds the exact
 text the hand-written code of v0.9.1 produced, and checks how `main.qml` feeds it.
 
@@ -115,11 +116,16 @@ frequency, network and fan, and Plasma's `powermanagement` data engine for the b
 The formatting helpers (`pct`, `temp`, `gib`, `rate`, `freq`, ...) test values with `isNum(v)`, which rejects `undefined`, `null`, `""` and `NaN`, so a
 missing sensor shows `--` rather than a fake 0.
 
-Sensors are declared individually in `main.qml` (`cpuUsage`, `memPercent`, `memUsed`, `memTotal`,
-`tempAvg`, `tempMax`, `freqAvg`, `freqMin`, `freqMax`, `netDown`, `netUp`, `netDownTotal`, `netUpTotal`,
-`coreCount`), plus dynamically created ones for fans (`fanRepeater` delegates) and per-core temperatures
-(`perCore` delegates inside `tempBlock`). Every one uses `updateRateLimit: root.refreshMs` except
-`coreCount`, which is read once and has no rate limit set. `refreshMs` is the setting clamped to at least 250.
+The plain sensors are created by one `Instantiator` (`sensorInst`) over `M.sensorKinds()`, one `Sensors.Sensor`
+per entry of every registry descriptor's `sensors` (`ram.used`, `temp.max`, `net.downTotal`, ...). A delegate takes
+its `sensorId` from the registry, uses `updateRateLimit: root.refreshMs` and `enabled: M.sensorActive(entry,
+root.sensorFlags(id))` (section 11). `sensorItems` maps `"<stat id>.<name>"` to the created item; it is a property
+that is reassigned on every `onObjectAdded`, so a lookup made before the items existed is made again once they do
+(the same pattern as `reserveItems` and `historyItems`). `sensorOf(id, name)` and `sensorValue(id, name)` read it,
+and `statVals(id)` returns every sensor of a plain-sensor stat under the sensor's name (`sensorVals`). The
+exceptions are the fans (`fanRepeater` delegates) and the per-core temperatures (`perCore` delegates inside
+`tempBlock`), which are created on demand. Every plain sensor uses `updateRateLimit: root.refreshMs`, including
+`temp.coreCount`, which is constant. `refreshMs` is the setting clamped to at least 250.
 
 ---
 
@@ -133,8 +139,8 @@ the row order in the settings table.
   comma-separated string, keeps only ids found in `defaultOrder`, removes repeats, then appends any id that
   is missing. So a stat added in a later version appears at the end for existing users without migration.
 - Per-stat predicates are `switch (id)` functions keyed by the stat id: `statShown`, `popupShown`, `statVals`
-  (the live values the registry's templates read), `scaleVals` (what the following scales watch) and
-  `popupBlock`. Panel text, captions, samples and width reserves (section 4) and alerts, scales, histories and
+  (the live values the registry's templates and scales read: its own case for battery and fan, `sensorVals(id)`
+  for the stats made of plain sensors) and `popupBlock`. Panel text, captions, samples and width reserves (section 4) and alerts, scales, histories and
   the graph flags (section 8) are not among them any more: they are looked up in the registry by id
   (`statAlert`, `statYFrom`, `statYTo`, `statHistory`, `statHistory2`, `statGraph`, `statPopupGraph`,
   `statPopupOn`, `statTextColor` and `statLineColor` are generic).
@@ -501,12 +507,14 @@ Peaks (frequency, network, fan: the stats whose scale `followsData`):
 - The peak is state and lives in `root.peaks`, a map from stat id to number (a missing id means the scale's
   `floor`: 1000 for frequency, 100000 for network, 3000 for fan). It is replaced, never edited in place, so
   bindings that read `peakOf(id)` are notified; it is written only when the value changed.
-- `stepPeak(id)` is the only writer. It calls `M.stepPeak(entry, prev, scaleVals(id), ctx, refreshMs)`, a pure
+- `stepPeak(id)` is the only writer. It calls `M.stepPeak(entry, prev, statVals(id), ctx, refreshMs)`, a pure
   function: `ctx` is `{ barChart, graphOn }` and the last argument is the time since the previous step in
-  milliseconds. The three triggers are where the old per-stat code ran: `freqMax.onValueChanged` (frequency),
-  `netDown.onValueChanged` (network, once per refresh; upload updates in the same tick, so it can be one update
-  behind) and `onFanRpmChanged` (fan). `scaleVals(id)` hands the pure function the values the scale watches
-  (registry `scale.observe.keys`: `max` for frequency, `down` and `up` for network, `value` for fan).
+  milliseconds. There are two kinds of trigger. A scale names the sensor whose update steps it, `scale.trigger` (`"max"` for
+  frequency, `"down"` for network: once per refresh, upload updates in the same tick so it can be one update
+  behind), and the sensor delegate's single `onValueChanged` calls `stepPeak` for it. Once every sensor exists, `stepTriggerPeaks()` steps each trigger sensor that already has a number once, because
+  a value that arrives while its sensor is being created reaches the handler before the item is in `sensorItems`.
+  The fan is not a sensor: `onFanRpmChanged` steps it. `statVals(id)` hands the pure function the values the scale watches (registry
+  `scale.observe.keys`: `max` for frequency, `down` and `up` for network, `value` for fan).
 - The step is `max(floor, observed, previous)`; a `"decay"` scale first multiplies the previous peak by
   `decay ^ (dtMs / 1000)`. The network scale (`decay: 0.99`, `floor: 100000`) therefore rises at once to the
   highest rate and falls about 1 % per second of elapsed time. The elapsed time is the refresh interval
@@ -600,14 +608,19 @@ Measured cost (the author's measurement, not reproducible from the code): a smoo
 
 ## 11. Sensor gating
 
-A sensor that nothing shows is switched off with `enabled:`. Three tiers, all visible in the declarations in
-`main.qml`:
+A sensor that nothing shows is switched off. The registry holds the rule: each `sensors` entry has a `gate`
+(`"show"`, `"popup"`, `"show|popup"` or `"opt:<name>"`, a per-stat option such as `popupMax`) and `expanded`
+(true: also needs the popup open), and `M.sensorActive(entry, flags)` turns that into a boolean. `main.qml`'s
+`sensorFlags(id)` reads the flags live from the settings (`keys.show`, `keys.popup`, `keys.options`, all
+`Plasmoid.configuration[key]`) and `root.expanded`, inside the delegate's `enabled` binding, so a changed setting or
+the popup opening re-evaluates it. Three tiers:
 
-- Needed by the panel or the popup: `show* || popup*` (for example `cpuUsage`: `showCpu || popupCpu`;
-  `freqMax` and the network down/up sensors follow the same pattern, and `tempAvg` uses `showTemp ||
-  popupTempAvg`).
-- Needed only by the popup: `popup* && root.expanded` (`memUsed`, `memTotal`, `tempMax`, `freqMin`,
-  `netDownTotal`, `netUpTotal`, `coreCount`). So they are read only while the popup is open.
+- Needed by the panel or the popup: gate `show|popup` (cpu usage, memory percent, average temperature, average and
+  maximum frequency, network down and up).
+- Needed only by the popup: `expanded: true` with gate `popup` (`ram.used`, `ram.total`, `freq.min`,
+  `net.downTotal`, `net.upTotal`) or `opt:` (`temp.max`: `popupMax`, `temp.coreCount`: `popupCores`). So they are
+  read only while the popup is open. The tests compare the registry's gates with the 14 hand-written `enabled:`
+  expressions of v0.9.2 over every combination of the flags.
 - Created on demand: fan sensors (delegates of `fanRepeater`, only while `fanWanted`) and per-core sensors
   (delegates of `perCore` inside `tempBlock`, which exists only as long as the popup's Loader for the temp
   block is active). A code comment says these exist only while the popup is open; that depends on how Plasma
@@ -717,20 +730,22 @@ settings. Everything else (strip layout, tooltip, `syncLengthInfo`, `configs()`,
    other setting the stat needs. Add the id to the `statOrder` default string (not required for upgrades,
    because `normalizeOrder` and `loadOrder` append missing ids, but the Defaults button uses this string).
    If it depends on hardware, add a `xCount` Int entry that the widget writes.
-2. `main.qml`, settings properties: `readonly property bool showX` and `popupX` (the sensors' `enabled:` and
-   `statShown` use them). The graph flags need no property: `statGraph` / `statPopupGraph` / `statPopupOn` read
+2. `main.qml`, settings properties: `readonly property bool showX` and `popupX` (`statShown` and the bespoke
+   code use them; the plain sensors' gates read the registry's keys). The graph flags need no property: `statGraph` / `statPopupGraph` / `statPopupOn` read
    the registry's `keys.gp`, `keys.gd` and `keys.popup` from the configuration.
-3. `main.qml`, sensors: add `Sensors.Sensor { id: ...; sensorId: "..."; updateRateLimit: root.refreshMs;
-   enabled: ... }`. Use `root.showX || root.popupX` for what the panel and popup need, and
-   `root.popupX && root.expanded` for popup-only details. If the sensor is hardware-dependent, add a
-   `hasX` / `xShown` / `popupXShown` set like `hasBattery` / `batShown` / `popupBatShown`, and write
-   `xCount` with `setCfg` from the code that finds it (compare `syncBatteryCount` and the `FanDiscovery`
-   loader, and be careful not to decide "none" from an empty first look).
-4. `main.qml`, history (if the stat can have a graph): the registry's `series` creates the `History` items by
-   itself. Add one entry per series to `historySensors` (`"x.value": xSensor`). If the stat is not a sensor
-   (like battery and fan), wrap its value in a `QtObject { readonly property var value: ... }`. If the scale
-   follows the data, add a case to `scaleVals` (the values `scale.observe.keys` names) and call `stepPeak("x")`
-   from the sensor's `onValueChanged`.
+3. `Metrics.js`, sensors: add one entry per sensor to the descriptor's `sensors` (`name: { id: "...", gate: "...",
+   expanded: true }`; see the header comment for the gates). `main.qml` creates, gates and reads them by itself
+   (`sensorOf`, `sensorValue`, `statVals`); the registry's `keys.options` names the settings an `opt:` gate reads.
+   If the stat is hardware-dependent and not a plain sensor, add a `hasX` / `xShown` / `popupXShown` set like
+   `hasBattery` / `batShown` / `popupBatShown`, and write `xCount` with `setCfg` from the code that finds it
+   (compare `syncBatteryCount` and the `FanDiscovery` loader, and be careful not to decide "none" from an empty
+   first look).
+4. History (if the stat can have a graph): the registry's `series` creates the `History` items by itself, and a
+   series of a plain-sensor stat uses the sensor of the same name. If the stat is not a plain sensor (like battery
+   and fan), wrap its value in a `QtObject { readonly property var value: ... }` and add it to `historySensor()`.
+   If the scale follows the data, set `scale.trigger` to the sensor that steps it (a stat that is not a sensor
+   calls `stepPeak("x")` from its own change handler, as the fan does) and add its case to `statVals` if it is not
+   a plain sensor.
 5. `main.qml`, ordering and flags: add the id to `defaultOrder`, a case to `statShown` (use the
    hardware-checked property), and, for a hardware-dependent stat, to `statPopupOn`.
 6. `Metrics.js` and `main.qml`, panel text and widths: add the stat's entry to `METRICS` (and its id to
