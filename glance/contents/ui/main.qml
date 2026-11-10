@@ -477,11 +477,11 @@ PlasmoidItem {
         if (x >= 1e6) return (x / 1e6).toFixed(1) + " MB"
         return Math.round(x / 1e3) + " KB"
     }
-    // CPU frequency arrives in MHz; show GHz from 1000 MHz up.
+    // CPU frequency arrives in MHz; always shown in GHz so the text never outgrows the "9.9 GHz" reserve.
     function ghzNumber(v) { return isNum(v) ? (v / 1000).toFixed(1) : "--" }
     function freq(v) {
         if (!isNum(v)) return "-- GHz"
-        return v >= 1000 ? ghzNumber(v) + " GHz" : Math.round(v) + " MHz"
+        return ghzNumber(v) + " GHz"
     }
 
     // Each temperature is highlighted by its own value, so the colour always
@@ -625,7 +625,7 @@ PlasmoidItem {
     function tempShort(v) { return tempNumber(v) + "°" }
     function freqShort(v) {
         if (!isNum(v)) return "--G"
-        return v >= 1000 ? (v / 1000).toFixed(1) + "G" : Math.round(v) + "M"
+        return ghzNumber(v) + "G"
     }
     function arrowFor(state) { return state > 0 ? "↑" : (state < 0 ? "↓" : "") }
     function batValue(percent, state, compact) {
