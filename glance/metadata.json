@@ -6,7 +6,7 @@
         "Icon": "utilities-system-monitor",
         "Authors": [{ "Name": "Local" }],
         "Category": "System Information",
-        "License": "GPL-2.0+",
+        "License": "GPL-2.0-or-later",
         "Version": "0.7"
     },
     "KPackageStructure": "Plasma/Applet",
