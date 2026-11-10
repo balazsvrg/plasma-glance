@@ -21,6 +21,10 @@ KCM.SimpleKCM {
     property alias cfg_popupFreq: freqPopup.checked
     property alias cfg_showNet: netPanel.checked
     property alias cfg_popupNet: netPopup.checked
+    property alias cfg_showBat: batPanel.checked
+    property alias cfg_popupBat: batPopup.checked
+    property int cfg_batteryCount           // written by the widget when it detects batteries
+    property bool cfg_batSeparate
 
     property bool cfg_showCpuDefault
     property bool cfg_popupCpuDefault
@@ -34,6 +38,10 @@ KCM.SimpleKCM {
     property bool cfg_popupFreqDefault
     property bool cfg_showNetDefault
     property bool cfg_popupNetDefault
+    property bool cfg_showBatDefault
+    property bool cfg_popupBatDefault
+    property int cfg_batteryCountDefault
+    property bool cfg_batSeparateDefault
 
     GridLayout {
         columns: 3
@@ -71,5 +79,31 @@ KCM.SimpleKCM {
         QQC2.Label { text: i18n("Network speed") }
         QQC2.CheckBox { id: netPanel; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: netPopup; Layout.alignment: Qt.AlignHCenter }
+
+        // Only shown on machines where the widget found a battery.
+        QQC2.Label { text: i18n("Battery"); visible: page.cfg_batteryCount > 0 }
+        QQC2.CheckBox { id: batPanel; visible: page.cfg_batteryCount > 0; Layout.alignment: Qt.AlignHCenter }
+        QQC2.CheckBox { id: batPopup; visible: page.cfg_batteryCount > 0; Layout.alignment: Qt.AlignHCenter }
+
+        // Only offered when there are several batteries to separate.
+        QQC2.Label {
+            visible: page.cfg_batteryCount > 1
+            text: i18n("Popup battery view")
+            Layout.topMargin: Kirigami.Units.largeSpacing
+        }
+        QQC2.ComboBox {
+            id: batViewBox
+            visible: page.cfg_batteryCount > 1
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+            Layout.topMargin: Kirigami.Units.largeSpacing
+            model: [i18n("Combined"), i18n("Each battery separately")]
+            onActivated: page.cfg_batSeparate = (currentIndex === 1)
+        }
+        Binding {
+            target: batViewBox
+            property: "currentIndex"
+            value: page.cfg_batSeparate ? 1 : 0
+        }
     }
 }

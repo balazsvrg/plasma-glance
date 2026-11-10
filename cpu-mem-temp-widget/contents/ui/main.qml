@@ -6,6 +6,7 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
 import org.kde.quickcharts as Charts
+import org.kde.plasma.plasma5support as P5Support
 
 PlasmoidItem {
     id: root
@@ -19,6 +20,7 @@ PlasmoidItem {
     readonly property bool showFreq: Plasmoid.configuration.showFreq
     readonly property bool showNet: Plasmoid.configuration.showNet
     readonly property bool netBits: Plasmoid.configuration.netBits
+    readonly property bool showBat: Plasmoid.configuration.showBat
     readonly property bool useF: Plasmoid.configuration.useFahrenheit
     readonly property bool popupCpu: Plasmoid.configuration.popupCpu
     readonly property bool popupMemory: Plasmoid.configuration.popupMemory
@@ -27,6 +29,8 @@ PlasmoidItem {
     readonly property bool popupCores: Plasmoid.configuration.popupCores
     readonly property bool popupFreq: Plasmoid.configuration.popupFreq
     readonly property bool popupNet: Plasmoid.configuration.popupNet
+    readonly property bool popupBat: Plasmoid.configuration.popupBat
+    readonly property bool batSeparate: Plasmoid.configuration.batSeparate
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs }
@@ -67,6 +71,47 @@ PlasmoidItem {
         if (!isNum(v)) return
         netPeak = Math.max(100000, Number(v), netPeak * 0.995)
     }
+    // ---- battery ----
+    // Data comes from Plasma's power-management engine, the same source KDE's own
+    // battery widget uses. (KDE's ksystemstats power sensors lag and disagree with
+    // the kernel on some laptops, so they are not used.) The "Battery" source is the
+    // combined summary; Battery0, Battery1, ... are the individual batteries.
+    P5Support.DataSource {
+        id: powerSource
+        engine: "powermanagement"
+        connectedSources: root.popupBatShown ? ["Battery"].concat(root.batterySources) : ["Battery"]
+        interval: 5000
+    }
+    readonly property var batterySummary: powerSource.data["Battery"] ? powerSource.data["Battery"] : ({})
+    readonly property var batterySources: batterySummary["Sources"] ? batterySummary["Sources"] : []
+    readonly property bool hasBattery: batterySummary["Has Battery"] === true
+    readonly property bool batShown: showBat && hasBattery
+    readonly property bool popupBatShown: popupBat && hasBattery
+    function batteryData(key) { var d = powerSource.data[key]; return d ? d : ({}) }
+
+    // The settings pages read the battery count from the config (they cannot see the engine).
+    function syncBatteryCount() {
+        var n = hasBattery ? batterySources.length : 0
+        if (Plasmoid.configuration.batteryCount !== n) Plasmoid.configuration.batteryCount = n
+    }
+    onHasBatteryChanged: syncBatteryCount()
+    onBatterySourcesChanged: syncBatteryCount()
+
+    readonly property var batPercent: isNum(batterySummary["Percent"]) ? Number(batterySummary["Percent"]) : undefined
+    readonly property int batState: batterySummary["State"] === "Charging" ? 1
+                                    : (batterySummary["State"] === "Discharging" ? -1 : 0)
+    readonly property bool batLow: isNum(batPercent) && batPercent < 15 && batState <= 0
+    function batEnergyTotal() {          // Wh held across all batteries
+        var total = 0, any = false
+        for (var i = 0; i < batterySources.length; ++i) {
+            var e = batteryData(batterySources[i])["Energy"]
+            if (isNum(e)) { total += Number(e); any = true }
+        }
+        return any ? total : undefined
+    }
+    // Lets the graph history treat the combined percentage like a sensor.
+    QtObject { id: batSensor; readonly property var value: root.batPercent }
+
     // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
     Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount" }
 
@@ -115,6 +160,7 @@ PlasmoidItem {
     History { id: freqHistory; sensor: freqAvg;   wanted: (root.panelGraphs && root.showFreq) || (root.popupGraphs && root.popupFreq) }
     History { id: netDownHistory; sensor: netDown; wanted: (root.panelGraphs && root.showNet) || (root.popupGraphs && root.popupNet) }
     History { id: netUpHistory;   sensor: netUp;   wanted: (root.panelGraphs && root.showNet) || (root.popupGraphs && root.popupNet) }
+    History { id: batHistory;     sensor: batSensor; wanted: (root.panelGraphs && root.batShown) || (root.popupGraphs && root.popupBatShown) }
 
     readonly property var cpuHist:  cpuHistory.historySource
     readonly property var ramHist:  ramHistory.historySource
@@ -122,6 +168,7 @@ PlasmoidItem {
     readonly property var freqHist: freqHistory.historySource
     readonly property var netDownHist: netDownHistory.historySource
     readonly property var netUpHist: netUpHistory.historySource
+    readonly property var batHist: batHistory.historySource
 
     // One small line graph; used by the popup and (next) the panel.
     component Spark: Charts.LineChart {
@@ -156,6 +203,22 @@ PlasmoidItem {
         return Math.round(useF ? v * 9 / 5 + 32 : v) + unit
     }
     function gib(v)   { return isNum(v) ? (v / 1073741824).toFixed(1) + " GiB" : "-- GiB" }
+    function wh(v) { return isNum(v) ? Number(v).toFixed(1) + " Wh" : "-- Wh" }
+    function batArrow() { return batState > 0 ? " ↑" : (batState < 0 ? " ↓" : "") }
+    function batText() { return pct(batPercent) + batArrow() }
+    // Hours as "3h 12m" or "45m"; empty when it cannot be estimated.
+    function hoursText(hours) {
+        if (!isFinite(hours) || hours < 0 || hours > 99) return ""
+        var h = Math.floor(hours), m = Math.round((hours - h) * 60)
+        if (m === 60) { h++; m = 0 }
+        return (h > 0 ? h + "h " : "") + m + "m"
+    }
+    // PowerDevil's estimate: time to full while charging, time left while discharging.
+    function batTimeText() {
+        var ms = batterySummary["Remaining msec"]
+        if (batState === 0 || !isNum(ms) || Number(ms) <= 0) return ""
+        return hoursText(Number(ms) / 3600000)
+    }
     // Network rates arrive in bytes/s. Decimal units: 1 KB = 1000 B (bits: x8).
     function rateParts(v) {
         var x = netBits ? Number(v) * 8 : Number(v)
@@ -193,6 +256,7 @@ PlasmoidItem {
         if (showTemp) parts.push(temp(tempAvg.value))
         if (showFreq) parts.push(freq(freqAvg.value))
         if (showNet)  parts.push(netText())
+        if (batShown) parts.push("BAT " + batText())
         return parts.join(" · ")
     }
 
@@ -219,6 +283,7 @@ PlasmoidItem {
         TextMetrics { id: tempMetrics; font: Kirigami.Theme.defaultFont; text: root.useF ? "212°F" : "100°C" }
         TextMetrics { id: freqMetrics; font: Kirigami.Theme.defaultFont; text: "9.9 GHz" }
         TextMetrics { id: netMetrics;  font: Kirigami.Theme.defaultFont; text: "↓999 MB/s ↑999 MB/s" }
+        TextMetrics { id: batMetrics;  font: Kirigami.Theme.defaultFont; text: "BAT 100% ↓" }
 
         // Thin divider spanning the full panel thickness (full height on a
         // horizontal panel, full width on a vertical one).
@@ -302,7 +367,7 @@ PlasmoidItem {
         GridLayout {
             id: layout
             anchors.fill: parent
-            columns: compact.vertical ? 1 : 9
+            columns: compact.vertical ? 1 : 11
             columnSpacing: Kirigami.Units.largeSpacing
             rowSpacing: Kirigami.Units.smallSpacing
 
@@ -370,8 +435,22 @@ PlasmoidItem {
                 history2: root.netUpHist
                 yTo: root.netPeak
             }
+            Divider { visible: root.batShown && (root.showCpu || root.showRam || root.showTemp || root.showFreq || root.showNet) }
+            MetricCell {
+                visible: root.batShown
+                Layout.alignment: Qt.AlignCenter
+                Layout.fillWidth: compact.vertical
+                Layout.fillHeight: !compact.vertical
+                caption: "Bat"
+                hPrefix: "BAT "
+                valueText: root.batText()
+                minLabelWidth: batMetrics.width
+                textColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                history: root.batHist
+                lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
+            }
             PlasmaComponents.Label {
-                visible: !root.showCpu && !root.showRam && !root.showTemp && !root.showFreq && !root.showNet
+                visible: !root.showCpu && !root.showRam && !root.showTemp && !root.showFreq && !root.showNet && !root.batShown
                 Layout.alignment: Qt.AlignCenter
                 text: "–"
             }
@@ -453,6 +532,45 @@ PlasmoidItem {
             yTo: root.netPeak
         }
 
+        PlasmaComponents.Label { visible: root.popupBatShown; text: "Battery" }
+        PlasmaComponents.Label {
+            visible: root.popupBatShown
+            text: root.batText() + (root.isNum(root.batEnergyTotal()) ? "  (" + root.wh(root.batEnergyTotal()) + ")" : "")
+            font.bold: true
+            color: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+        }
+
+        // One line per battery, only when "each battery separately" is chosen.
+        Repeater {
+            model: (root.popupBatShown && root.batSeparate && root.batterySources.length > 1) ? root.batterySources : []
+            delegate: PlasmaComponents.Label {
+                required property var modelData
+                readonly property var d: root.batteryData(modelData)
+                Layout.columnSpan: 2
+                Layout.leftMargin: Kirigami.Units.gridUnit
+                opacity: 0.85
+                text: (d["Pretty Name"] ? d["Pretty Name"] : modelData) + ":  " + root.pct(d["Percent"])
+                      + "  (" + root.wh(d["Energy"]) + ")  ·  health " + root.pct(d["Capacity"])
+                      + (d["State"] === "Charging" ? "  ↑" : (d["State"] === "Discharging" ? "  ↓" : ""))
+            }
+        }
+
+        PlasmaComponents.Label { visible: root.popupBatShown && root.batState !== 0; text: root.batState > 0 ? "Charging" : "Discharging" }
+        PlasmaComponents.Label {
+            visible: root.popupBatShown && root.batState !== 0
+            text: root.batTimeText() !== "" ? root.batTimeText() + (root.batState > 0 ? " to full" : " left") : "estimating…"
+            font.bold: true
+        }
+
+        Spark {
+            visible: root.popupGraphs && root.popupBatShown && root.batHist !== null
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
+            history: (root.popupGraphs && root.popupBatShown) ? root.batHist : null
+            lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
+        }
+
         PlasmaComponents.Label { visible: root.popupTempAvg; text: "CPU temp (avg)" }
         PlasmaComponents.Label {
             visible: root.popupTempAvg
@@ -531,6 +649,7 @@ PlasmoidItem {
         PlasmaComponents.Label {
             visible: !root.popupCpu && !root.popupMemory && !root.popupTempAvg
                      && !root.popupTempMax && !root.popupCores && !root.popupFreq && !root.popupNet
+                     && !root.popupBatShown
             Layout.columnSpan: 2
             text: "Nothing to show. Enable items under Configure > Metrics."
             opacity: 0.7

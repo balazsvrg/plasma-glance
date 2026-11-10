@@ -28,6 +28,14 @@
             <label>Show network speed in bits per second instead of bytes</label>
             <default>false</default>
         </entry>
+        <entry name="showBat" type="Bool">
+            <label>Show battery</label>
+            <default>false</default>
+        </entry>
+        <entry name="batteryCount" type="Int">
+            <label>Number of batteries found (written by the widget, read by the settings pages)</label>
+            <default>0</default>
+        </entry>
         <entry name="useFahrenheit" type="Bool">
             <label>Show temperature in Fahrenheit</label>
             <default>false</default>
@@ -68,6 +76,14 @@
         </entry>
         <entry name="popupNet" type="Bool">
             <label>Popup: show network speed</label>
+            <default>false</default>
+        </entry>
+        <entry name="popupBat" type="Bool">
+            <label>Popup: show battery</label>
+            <default>false</default>
+        </entry>
+        <entry name="batSeparate" type="Bool">
+            <label>Popup: list each battery separately (only with several batteries)</label>
             <default>false</default>
         </entry>
         <entry name="popupCores" type="Bool">

@@ -55,9 +55,15 @@ Right-click the widget in the panel and choose **Configure…**. There are three
 | CPU usage, memory, CPU temperature | on | on |
 | CPU frequency | off | off |
 | Network speed (all interfaces combined) | off | off |
+| Battery (laptops only; hidden when none is found) | off | off |
 | Hottest core, per-core temperatures | n/a | on |
 
 Turning off per-core temperatures also stops its sensors.
+
+On a laptop with **several batteries**, the Metrics tab also offers *Popup battery view*:
+**Combined** (default) or **Each battery separately**. The panel always shows the combined
+percentage, with ↑ while charging and ↓ while discharging, and turns red below 15% unless
+charging. The popup shows energy held, state and the time estimate (to full, or left).
 
 **Graphs**
 
@@ -87,6 +93,10 @@ Sensor IDs used (check with `kstatsviewer --list`):
 `cpu/all/coreCount`, `cpu/cpuN/temperature`,
 `cpu/all/averageFrequency`, `cpu/all/minimumFrequency`, `cpu/all/maximumFrequency`,
 `network/all/download`, `network/all/upload`, `network/all/totalDownload`, `network/all/totalUpload`.
+Battery data comes from Plasma's power-management engine (`powermanagement`, via
+`org.kde.plasma.plasma5support`), the same source KDE's own battery widget uses. KDE's
+`power/<id>/...` sensors were not used: on one test laptop they lagged behind the kernel
+and disagreed with it. The engine does not report watts, so the popup shows no power draw.
 Graphs use KDE Quick Charts (`org.kde.quickcharts`: `LineChart`, `HistoryProxySource`).
 
 ## Layout
