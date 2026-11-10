@@ -10,7 +10,7 @@ Kirigami.InlineMessage {
     id: notice
 
     readonly property var cfg: Plasmoid.configuration
-    readonly property var droppedIds: cfg.lengthDropped === "" ? [] : String(cfg.lengthDropped).split(",")
+    readonly property var droppedIds: cfg.lengthDropped ? String(cfg.lengthDropped).split(",") : []
     readonly property bool shortened: cfg.lengthLevel >= 2
     readonly property bool active: cfg.maxLength > 0
                                    && (cfg.lengthInlineOff || shortened || droppedIds.length > 0)

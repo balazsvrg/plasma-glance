@@ -601,9 +601,13 @@ PlasmoidItem {
     }
 
     // Space one stat takes at a given step (width when horizontal, height when vertical).
+    // Inline graphs take length, so they are only drawn inline at the first (full) step; from step 1 on
+    // they are drawn behind the text. This one rule feeds the width calculation, the strip and the
+    // settings warning.
+    function inlineGraphsAt(level) { return graphInline && level === 0 }
     function cellLength(id, level) {
         var compact = level >= 2
-        var inlineGraph = level === 0 && graphInline && statGraph(id)
+        var inlineGraph = inlineGraphsAt(level) && statGraph(id)
         var gap = Kirigami.Units.smallSpacing
         if (!vertical) {
             var w = reservedWidth(id, compact)
@@ -751,7 +755,7 @@ PlasmoidItem {
         var keep = ids.length - fit.drop
         var graphVisible = false
         for (var i = 0; i < keep; ++i) if (statGraph(ids[i])) graphVisible = true
-        var inlineOff = fit.level >= 1 && graphInline && graphVisible
+        var inlineOff = graphInline && !inlineGraphsAt(fit.level) && graphVisible
         var dropped = ids.slice(keep).join(",")
         var cfg = Plasmoid.configuration
         if (cfg.lengthLevel !== fit.level) cfg.lengthLevel = fit.level
@@ -836,8 +840,8 @@ PlasmoidItem {
             property bool graphOn: false                       // this stat's panel graph toggle
             readonly property bool hasGraph: graphOn && history !== null
             // Inline graphs take length, so they turn into behind-text graphs when space is short.
-            readonly property bool behind: hasGraph && (!root.graphInline || root.lengthLevel >= 1)
-            readonly property bool inline: hasGraph && root.graphInline && root.lengthLevel === 0
+            readonly property bool behind: hasGraph && !root.inlineGraphsAt(root.lengthLevel)
+            readonly property bool inline: hasGraph && root.inlineGraphsAt(root.lengthLevel)
 
             implicitWidth: content.implicitWidth
             implicitHeight: content.implicitHeight

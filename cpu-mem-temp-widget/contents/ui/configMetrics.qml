@@ -42,7 +42,6 @@ KCM.SimpleKCM {
     property alias cfg_graphPanelBat: batPanelGraph.checked
     property alias cfg_popupBat: batPopup.checked
     property alias cfg_graphPopupBat: batPopupGraph.checked
-    property int cfg_batteryCount           // written by the widget when it detects batteries
     property bool cfg_batSeparate
 
     property alias cfg_showFan: fanPanel.checked
@@ -50,7 +49,6 @@ KCM.SimpleKCM {
     property alias cfg_popupFan: fanPopup.checked
     property alias cfg_graphPopupFan: fanPopupGraph.checked
     property alias cfg_fanAnimate: fanAnimate.checked
-    property int cfg_fanCount               // written by the widget when it detects fans
 
     property bool cfg_showCpuDefault
     property bool cfg_graphPanelCpuDefault
@@ -78,18 +76,19 @@ KCM.SimpleKCM {
     property bool cfg_graphPanelBatDefault
     property bool cfg_popupBatDefault
     property bool cfg_graphPopupBatDefault
-    property int cfg_batteryCountDefault
     property bool cfg_batSeparateDefault
     property bool cfg_showFanDefault
     property bool cfg_graphPanelFanDefault
     property bool cfg_popupFanDefault
     property bool cfg_graphPopupFanDefault
     property bool cfg_fanAnimateDefault
-    property int cfg_fanCountDefault
 
     // "All graphs" row: checked when every graph box that is shown is checked.
-    readonly property bool hasBat: cfg_batteryCount > 0
-    readonly property bool hasFan: cfg_fanCount > 0
+    // Written by the widget when it detects hardware; read live (no cfg_ property, so the dialog never writes them back).
+    readonly property int batteryCount: Plasmoid.configuration.batteryCount
+    readonly property int fanCount: Plasmoid.configuration.fanCount
+    readonly property bool hasBat: batteryCount > 0
+    readonly property bool hasFan: fanCount > 0
     readonly property bool allPanelGraphs: cpuPanelGraph.checked && ramPanelGraph.checked
         && tempPanelGraph.checked && freqPanelGraph.checked && netPanelGraph.checked
         && (!hasBat || batPanelGraph.checked) && (!hasFan || fanPanelGraph.checked)
@@ -110,23 +109,24 @@ KCM.SimpleKCM {
     // Is this stat currently hidden by the maximum length? (read live from the widget's state)
     function hiddenByLength(id) {
         var d = Plasmoid.configuration.lengthDropped
-        return Plasmoid.configuration.maxLength > 0 && d !== "" && String(d).split(",").indexOf(id) >= 0
+        return Plasmoid.configuration.maxLength > 0 && !!d && String(d).split(",").indexOf(id) >= 0
     }
     // A stat's name, with a marker when the maximum length is hiding it in the panel.
     component StatName: RowLayout {
         id: sn
         property string name
         property string statId
+        readonly property bool hidden: page.hiddenByLength(statId)
         spacing: Kirigami.Units.smallSpacing
         QQC2.Label { text: sn.name }
         Kirigami.Icon {
-            visible: page.hiddenByLength(sn.statId)
+            visible: sn.hidden
             source: "dialog-warning"
             implicitWidth: Kirigami.Units.iconSizes.small
             implicitHeight: Kirigami.Units.iconSizes.small
         }
         QQC2.Label {
-            visible: page.hiddenByLength(sn.statId)
+            visible: sn.hidden
             text: i18n("hidden by the maximum length")
             font.italic: true
             color: Kirigami.Theme.neutralTextColor
@@ -134,128 +134,129 @@ KCM.SimpleKCM {
     }
 
     ColumnLayout {
-    LengthNotice { }
+        Layout.fillWidth: true
+        LengthNotice { }
 
-    GridLayout {
-        columns: 5
-        columnSpacing: Kirigami.Units.gridUnit * 1.5
-        rowSpacing: Kirigami.Units.smallSpacing
+        GridLayout {
+            columns: 5
+            columnSpacing: Kirigami.Units.gridUnit * 1.5
+            rowSpacing: Kirigami.Units.smallSpacing
 
-        // Group headers
-        Item { }
-        QQC2.Label { text: i18n("In the panel"); font.bold: true; Layout.columnSpan: 2; Layout.alignment: Qt.AlignHCenter }
-        QQC2.Label { text: i18n("In the popup"); font.bold: true; Layout.columnSpan: 2; Layout.alignment: Qt.AlignHCenter }
+            // Group headers
+            Item { }
+            QQC2.Label { text: i18n("In the panel"); font.bold: true; Layout.columnSpan: 2; Layout.alignment: Qt.AlignHCenter }
+            QQC2.Label { text: i18n("In the popup"); font.bold: true; Layout.columnSpan: 2; Layout.alignment: Qt.AlignHCenter }
 
-        QQC2.Label { text: i18n("Stat"); font.bold: true }
-        QQC2.Label { text: i18n("Show"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
-        QQC2.Label { text: i18n("Graph"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
-        QQC2.Label { text: i18n("Show"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
-        QQC2.Label { text: i18n("Graph"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
+            QQC2.Label { text: i18n("Stat"); font.bold: true }
+            QQC2.Label { text: i18n("Show"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
+            QQC2.Label { text: i18n("Graph"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
+            QQC2.Label { text: i18n("Show"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
+            QQC2.Label { text: i18n("Graph"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
 
-        StatName { name: i18n("CPU usage"); statId: "cpu" }
-        QQC2.CheckBox { id: cpuPanel; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: cpuPanelGraph; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: cpuPopup; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: cpuPopupGraph; Layout.alignment: Qt.AlignHCenter }
+            StatName { name: i18n("CPU usage"); statId: "cpu" }
+            QQC2.CheckBox { id: cpuPanel; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: cpuPanelGraph; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: cpuPopup; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: cpuPopupGraph; Layout.alignment: Qt.AlignHCenter }
 
-        StatName { name: i18n("Memory"); statId: "ram" }
-        QQC2.CheckBox { id: ramPanel; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: ramPanelGraph; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: ramPopup; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: ramPopupGraph; Layout.alignment: Qt.AlignHCenter }
+            StatName { name: i18n("Memory"); statId: "ram" }
+            QQC2.CheckBox { id: ramPanel; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: ramPanelGraph; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: ramPopup; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: ramPopupGraph; Layout.alignment: Qt.AlignHCenter }
 
-        StatName { name: i18n("CPU temperature"); statId: "temp" }
-        QQC2.CheckBox { id: tempPanel; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: tempPanelGraph; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: tempPopup; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: tempPopupGraph; Layout.alignment: Qt.AlignHCenter }
+            StatName { name: i18n("CPU temperature"); statId: "temp" }
+            QQC2.CheckBox { id: tempPanel; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: tempPanelGraph; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: tempPopup; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: tempPopupGraph; Layout.alignment: Qt.AlignHCenter }
 
-        QQC2.Label { text: i18n("Hottest core"); Layout.leftMargin: Kirigami.Units.gridUnit; opacity: 0.8 }
-        Item { }
-        Item { }
-        QQC2.CheckBox { id: tempMaxPopup; Layout.alignment: Qt.AlignHCenter }
-        Item { }
+            QQC2.Label { text: i18n("Hottest core"); Layout.leftMargin: Kirigami.Units.gridUnit; opacity: 0.8 }
+            Item { }
+            Item { }
+            QQC2.CheckBox { id: tempMaxPopup; Layout.alignment: Qt.AlignHCenter }
+            Item { }
 
-        QQC2.Label { text: i18n("Per-core temperatures"); Layout.leftMargin: Kirigami.Units.gridUnit; opacity: 0.8 }
-        Item { }
-        Item { }
-        QQC2.CheckBox { id: coresPopup; Layout.alignment: Qt.AlignHCenter }
-        Item { }
+            QQC2.Label { text: i18n("Per-core temperatures"); Layout.leftMargin: Kirigami.Units.gridUnit; opacity: 0.8 }
+            Item { }
+            Item { }
+            QQC2.CheckBox { id: coresPopup; Layout.alignment: Qt.AlignHCenter }
+            Item { }
 
-        StatName { name: i18n("CPU frequency"); statId: "freq" }
-        QQC2.CheckBox { id: freqPanel; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: freqPanelGraph; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: freqPopup; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: freqPopupGraph; Layout.alignment: Qt.AlignHCenter }
+            StatName { name: i18n("CPU frequency"); statId: "freq" }
+            QQC2.CheckBox { id: freqPanel; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: freqPanelGraph; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: freqPopup; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: freqPopupGraph; Layout.alignment: Qt.AlignHCenter }
 
-        StatName { name: i18n("Network speed"); statId: "net" }
-        QQC2.CheckBox { id: netPanel; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: netPanelGraph; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: netPopup; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: netPopupGraph; Layout.alignment: Qt.AlignHCenter }
+            StatName { name: i18n("Network speed"); statId: "net" }
+            QQC2.CheckBox { id: netPanel; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: netPanelGraph; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: netPopup; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: netPopupGraph; Layout.alignment: Qt.AlignHCenter }
 
-        // Only shown on machines where the widget found a battery.
-        StatName { name: i18n("Battery"); statId: "bat"; visible: page.hasBat }
-        QQC2.CheckBox { id: batPanel; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: batPanelGraph; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: batPopup; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: batPopupGraph; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
+            // Only shown on machines where the widget found a battery.
+            StatName { name: i18n("Battery"); statId: "bat"; visible: page.hasBat }
+            QQC2.CheckBox { id: batPanel; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: batPanelGraph; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: batPopup; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: batPopupGraph; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
 
-        // Only shown on machines where the widget found a fan sensor.
-        StatName { name: i18n("Fan speed"); statId: "fan"; visible: page.hasFan }
-        QQC2.CheckBox { id: fanPanel; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: fanPanelGraph; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: fanPopup; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
-        QQC2.CheckBox { id: fanPopupGraph; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
+            // Only shown on machines where the widget found a fan sensor.
+            StatName { name: i18n("Fan speed"); statId: "fan"; visible: page.hasFan }
+            QQC2.CheckBox { id: fanPanel; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: fanPanelGraph; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: fanPopup; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
+            QQC2.CheckBox { id: fanPopupGraph; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
 
-        // Turn every graph on or off at once.
-        QQC2.Label { text: i18n("All graphs"); font.bold: true; Layout.topMargin: Kirigami.Units.largeSpacing }
-        Item { }
-        QQC2.CheckBox {
-            id: allPanelBox
-            Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: Kirigami.Units.largeSpacing
-            onToggled: page.setAllPanelGraphs(checked)
+            // Turn every graph on or off at once.
+            QQC2.Label { text: i18n("All graphs"); font.bold: true; Layout.topMargin: Kirigami.Units.largeSpacing }
+            Item { }
+            QQC2.CheckBox {
+                id: allPanelBox
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: Kirigami.Units.largeSpacing
+                onToggled: page.setAllPanelGraphs(checked)
+            }
+            Item { }
+            QQC2.CheckBox {
+                id: allPopupBox
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: Kirigami.Units.largeSpacing
+                onToggled: page.setAllPopupGraphs(checked)
+            }
+            // Bindings survive user clicks (a plain "checked:" binding would be dropped).
+            Binding { target: allPanelBox; property: "checked"; value: page.allPanelGraphs }
+            Binding { target: allPopupBox; property: "checked"; value: page.allPopupGraphs }
+
+            QQC2.CheckBox {
+                id: fanAnimate
+                visible: page.hasFan
+                Layout.columnSpan: 5
+                Layout.topMargin: Kirigami.Units.largeSpacing
+                text: i18n("Animate fan icon based on fan speed")
+            }
+
+            // Only offered when there are several batteries to separate.
+            QQC2.Label {
+                visible: page.batteryCount > 1
+                text: i18n("Popup battery view")
+                Layout.topMargin: Kirigami.Units.largeSpacing
+            }
+            QQC2.ComboBox {
+                id: batViewBox
+                visible: page.batteryCount > 1
+                Layout.columnSpan: 4
+                Layout.fillWidth: true
+                Layout.topMargin: Kirigami.Units.largeSpacing
+                model: [i18n("Combined"), i18n("Each battery separately")]
+                onActivated: page.cfg_batSeparate = (currentIndex === 1)
+            }
+            Binding {
+                target: batViewBox
+                property: "currentIndex"
+                value: page.cfg_batSeparate ? 1 : 0
+            }
         }
-        Item { }
-        QQC2.CheckBox {
-            id: allPopupBox
-            Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: Kirigami.Units.largeSpacing
-            onToggled: page.setAllPopupGraphs(checked)
-        }
-        // Bindings survive user clicks (a plain "checked:" binding would be dropped).
-        Binding { target: allPanelBox; property: "checked"; value: page.allPanelGraphs }
-        Binding { target: allPopupBox; property: "checked"; value: page.allPopupGraphs }
-
-        QQC2.CheckBox {
-            id: fanAnimate
-            visible: page.hasFan
-            Layout.columnSpan: 5
-            Layout.topMargin: Kirigami.Units.largeSpacing
-            text: i18n("Animate fan icon based on fan speed")
-        }
-
-        // Only offered when there are several batteries to separate.
-        QQC2.Label {
-            visible: page.cfg_batteryCount > 1
-            text: i18n("Popup battery view")
-            Layout.topMargin: Kirigami.Units.largeSpacing
-        }
-        QQC2.ComboBox {
-            id: batViewBox
-            visible: page.cfg_batteryCount > 1
-            Layout.columnSpan: 4
-            Layout.fillWidth: true
-            Layout.topMargin: Kirigami.Units.largeSpacing
-            model: [i18n("Combined"), i18n("Each battery separately")]
-            onActivated: page.cfg_batSeparate = (currentIndex === 1)
-        }
-        Binding {
-            target: batViewBox
-            property: "currentIndex"
-            value: page.cfg_batSeparate ? 1 : 0
-        }
-    }
     }
 }

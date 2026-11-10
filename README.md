@@ -111,7 +111,7 @@ The tooltip always lists every stat, including dropped ones. With the limit at 0
 **The settings say so when the limit is changing what you see.** If the limit currently turns inline
 graphs into behind-text ones, shortens the text, or hides stats (with their graphs), a warning at the
 top of the General and Metrics tabs lists exactly what, and the Metrics table marks each hidden stat
-with "hidden by the maximum length". The warning appears and disappears live as you change the limit.
+with "hidden by the maximum length". It reflects the saved limit and the widget's current layout, so it updates after you press Apply (not while you type in the field).
 
 **Setting it with the mouse:** right-click the widget and choose **Adjust length with the mouse**.
 A handle appears on the strip's free edge: the right edge when the widget sits in the left half
