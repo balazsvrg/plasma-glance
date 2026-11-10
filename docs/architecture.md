@@ -49,7 +49,7 @@ tests/golden/                    the panel text of release v0.9.1 (panel_text.js
 defaults, sensors and when they are polled, panel text templates (full, compact, vertical), worst-case
 samples, graph scale, alert rule and popup rows, plus the pure formatting helpers that render those templates.
 `main.qml` takes its panel text and its horizontal width reserves (section 4), its alerts, scales and histories
-(section 8) and its plain sensors (sections 2 and 11) from it; the settings pages and the popup rows still carry
+(section 8), its plain sensors (sections 2 and 11) and its popup (section 5) from it; the settings pages still carry
 their own copies of the rest, which the registry also describes and the tests compare with the code (section 14
 lists what a new stat still needs).
 `tests/metrics_test.py` checks the registry against the golden data in `tests/golden/`, which holds the exact
@@ -108,9 +108,9 @@ frequency, network and fan, and Plasma's `powermanagement` data engine for the b
                   +--> Spark in MetricCell (behind text or inline)
                   +--> PopupGraph { statId } in a popup block
 
- Popup rows (PopupRow) do NOT use statText: they call the format helpers directly
- (pct, gib, freq, ghzNumber, rate, bytesText, temp, wh) on the sensor values. They are
- thin wrappers over `M.FORMATS` in `Metrics.js`, the same formatters the panel templates use.
+ Popup rows (PopupRow) do NOT use statText: the generic block renders the registry's popup row
+ templates (`M.render(row.value, popupVals(id), textCtx)`), the same formatters the panel templates use.
+ Only the per-battery lines still call two thin wrappers (`pct`, `wh`) over `M.FORMATS`.
 ```
 
 The formatting helpers (`pct`, `temp`, `gib`, `rate`, `freq`, ...) test values with `isNum(v)`, which rejects `undefined`, `null`, `""` and `NaN`, so a
@@ -124,7 +124,7 @@ that is reassigned on every `onObjectAdded`, so a lookup made before the items e
 (the same pattern as `reserveItems` and `historyItems`). `sensorOf(id, name)` and `sensorValue(id, name)` read it,
 and `statVals(id)` returns every sensor of a plain-sensor stat under the sensor's name (`sensorVals`). The
 exceptions are the fans (`fanRepeater` delegates) and the per-core temperatures (`perCore` delegates inside
-`tempBlock`), which are created on demand. Every plain sensor uses `updateRateLimit: root.refreshMs`, including
+`repeatBlock`), which are created on demand. Every plain sensor uses `updateRateLimit: root.refreshMs`, including
 `temp.coreCount`, which is constant. `refreshMs` is the setting clamped to at least 250.
 
 ---
@@ -138,9 +138,9 @@ the row order in the settings table.
 - `statOrder` is `normalizeOrder(Plasmoid.configuration.statOrder)`. `normalizeOrder` splits the
   comma-separated string, keeps only ids found in `defaultOrder`, removes repeats, then appends any id that
   is missing. So a stat added in a later version appears at the end for existing users without migration.
-- Per-stat predicates are `switch (id)` functions keyed by the stat id: `statShown`, `popupShown`, `statVals`
+- Per-stat predicates are `switch (id)` functions keyed by the stat id: `statShown` and `statVals`
   (the live values the registry's templates and scales read: its own case for battery and fan, `sensorVals(id)`
-  for the stats made of plain sensors) and `popupBlock`. Panel text, captions, samples and width reserves (section 4) and alerts, scales, histories and
+  for the stats made of plain sensors). `popupShown` is generic too (`M.popupOn`). Panel text, captions, samples and width reserves (section 4) and alerts, scales, histories and
   the graph flags (section 8) are not among them any more: they are looked up in the registry by id
   (`statAlert`, `statYFrom`, `statYTo`, `statHistory`, `statHistory2`, `statGraph`, `statPopupGraph`,
   `statPopupOn`, `statTextColor` and `statLineColor` are generic).
@@ -179,15 +179,27 @@ is above 0).
 ### Popup
 
 `fullRepresentation` is a `ColumnLayout` with a `Repeater` over `statOrder`. Each delegate is a `Loader`
-with `active: root.popupShown(modelData)` and `sourceComponent: root.popupBlock(modelData)`.
-`popupBlock(id)` returns one of the `Component` blocks `cpuBlock`, `ramBlock`, `freqBlock`, `netBlock`,
-`batBlock`, `fanBlock`, `tempBlock`. A block is a `ColumnLayout` of `PopupRow`s and a
-`PopupGraph { statId: "..." }`. `PopupRow` uses a fixed-width name column (`popupLabelWidth`, the width of
-the text "CPU temp (max core)"), so values line up between blocks. `fanBlock` builds its row by hand
-because it holds a `FanIcon`. If no block is shown, a "Nothing to show" label appears (`anyPopupShown()`).
+with `active: root.popupShown(modelData)` and the one generic `statBlock` as its `sourceComponent`; the Loader's
+`blockStatId` tells the block which stat it shows. There are no per-stat blocks: the block is built from the
+stat's registry `popup` descriptor, in this order:
 
-`popupShown("temp")` is true when any of `popupTempAvg`, `popupTempMax`, `popupCores` is on. For `bat` and
-`fan` it uses `popupBatShown` / `popupFanShown`, which include the hardware check.
+1. the rows before the graph (`M.popupRowsBeforeGraph`: all rows, or up to `graphAfter`; the temperature graph
+   sits under its average row), each a `StatRow` (a `PopupRow` with `name = row.label`, `value` from
+   `M.render(row.value, popupVals(id), textCtx)`, colour from `popupRowColor`: `alert: "panel"` is the panel's
+   rule, a function is called with the popup values; `decoration: "fanIcon"` puts the spinning icon before the
+   value; `when` hides the row unless that flag is on);
+2. the hooks (`popup.hooks`): `perBattery` and `chargeRow`, one component each (`hookComponent(name)`). A hook
+   item says `shown`, and its Loader is visible only then, so an empty hook adds no layout spacing;
+3. the `PopupGraph { statId }` (`graphWhen` names its flag), then the remaining rows;
+4. `popup.repeat` (`repeatBlock`): a header and a two-column grid, one line per item (the per-core
+   temperatures). The sensor id is `repeat.sensor` with `{n}` the 0-based index; the label's `{n}` is index + 1.
+
+`popupVals(id)` is every sensor of a plain stat (the popup-only ones too), or `statVals` for the others (the
+battery adds the summed energy). `popupFlags(id)` is `sensorFlags(id)` plus `available` (`hasBattery`,
+`hasFan`); `popupShown(id)` is `M.popupOn(entry, popupFlags(id))`: the stat's popup flag, or any option that
+shows a row (temperature), and the hardware named by `popup.available`. `PopupRow` uses a fixed-width name
+column, `popupLabelWidth`: the widest of `M.popupLabels(M.METRICS)` (one `TextMetrics` per label). If no block
+is shown, a "Nothing to show" label appears (`anyPopupShown()`).
 
 ### Tooltip
 
@@ -547,8 +559,8 @@ Battery numbers are verified against `/sys/class/power_supply/BAT*` and `upower 
 - `syncBatteryCount(data)` writes `batteryCount`. It runs from a `Connections { target: powerSource }`
   `onNewData` handler for the `"Battery"` source and computes the count from the event's `data` argument, so
   the first answer from the engine corrects a stale saved value even if `hasBattery` never changes.
-- The popup block shows the combined line, optionally one line per battery
-  (`batSeparate && batterySources.length > 1`), and a charge/discharge time line. The engine reports no
+- The popup block shows the combined line, optionally one line per battery (the `perBattery` hook:
+  `batSeparate && batterySources.length > 1`), and a charge/discharge time line (the `chargeRow` hook). The engine reports no
   watts, so no power draw is shown.
 
 ---
@@ -596,7 +608,7 @@ shake (the `frame` counter flips the offset) and three swirling speed lines.
 The spin is a stepped `Timer`, not an animator: `interval: 80` (12.5 steps per second), running only while
 `animate && level > 0 && visible && width > 0`. Each tick adds 10, 22 or 40 degrees to `rotor.rotation` by
 level; a step stays under 60 degrees so a three-blade fan never appears to turn backwards. The icon is used
-in the panel (`MetricCell`) and in the popup (`fanBlock`); in both, `visible` stops the timer when the item is
+in the panel (`MetricCell`) and in the popup (a `PopupRow` with `fanIcon`); in both, `visible` stops the timer when the item is
 not on screen.
 
 Measured cost (the author's measurement, not reproducible from the code): a smooth 60 fps `RotationAnimator` cost about
@@ -622,7 +634,7 @@ the popup opening re-evaluates it. Three tiers:
   read only while the popup is open. The tests compare the registry's gates with the 14 hand-written `enabled:`
   expressions of v0.9.2 over every combination of the flags.
 - Created on demand: fan sensors (delegates of `fanRepeater`, only while `fanWanted`) and per-core sensors
-  (delegates of `perCore` inside `tempBlock`, which exists only as long as the popup's Loader for the temp
+  (delegates inside `repeatBlock`, which exists only as long as the popup's Loader for the temp
   block is active). A code comment says these exist only while the popup is open; that depends on how Plasma
   instantiates `fullRepresentation`, which was not checked here.
 
@@ -764,8 +776,10 @@ settings. Everything else (strip layout, tooltip, `syncLengthInfo`, `configs()`,
    `statYFrom` and `statYTo` are generic and need no case.
 8. `main.qml`, `MetricCell`: nothing for a text-only stat. For an icon, follow `cell.fan` (the extra grid
    column and the icon item).
-9. `main.qml`, popup: a case in `popupShown`, a case in `popupBlock`, and a `Component { id: xBlock; ...}`
-    holding `PopupRow`s and `PopupGraph { statId: "x" }`. Gate any popup-only sensor with `&& root.expanded`.
+9. `Metrics.js`, popup: the entry's `popup` (`rows` with `label` and `value` templates, `graph`; optionally `when`,
+    `alert`, `decoration`, `graphWhen`, `graphAfter`, `available`, `repeat` or `hooks`). `main.qml` needs nothing
+    for a stat made of rows and a graph. A new hook name needs a component in `hookComponent`. Gate any
+    popup-only sensor with `expanded: true`.
 10. `configMetrics.qml`: add the entry to `stats` (id, translated name, the four setting names); add
     `cfg_*` and `cfg_*Default` properties for every new key; if hardware-dependent, add the `xCount`
     read (`Plasmoid.configuration.xCount`), a `hasX` property and a case in `rowAvailable`. Do not declare

@@ -615,6 +615,15 @@ equal("popup rows render the v0.9.2 text", run(M, "(function(){var v={cpu:{value
       "return ['cpu','ram','freq','net','fan'].map(function(i){return byId(i).popup.rows.map(function(r){return render(r.value,v[i],c)})})})()"),
       [["12%"], ["7.5 GiB / 14.9 GiB (48%)"], ["2.8 GHz", "0.8 / 4.5 GHz"], ["123 KB/s  (5.0 GB total)", "7.9 KB/s  (1.0 GB total)"], ["2400 RPM"]])
 
+# ---- popup visibility and label width from the registry (P4 step 5) ----
+check("popupShown asks the registry", "return !!m && M.popupOn(m, popupFlags(id))" in MAIN_QML)
+for n in ("popupCpu", "popupMemory", "popupTempAvg", "popupTempMax", "popupFreq", "popupNet", "popupCores"):
+    check("main.qml has no per-stat %s property" % n, "property bool %s:" % n not in MAIN_QML)
+check("the popup name column is sized from the registry's labels", "model: M.popupLabels(M.METRICS)" in MAIN_QML
+      and '"CPU temp (max core)"' not in MAIN_QML)
+for f in ("temp", "gib", "rate", "bytesText", "ghzNumber", "freq"):
+    check("the unused popup wrapper %s is gone" % f, "function %s(v)" % f not in MAIN_QML)
+
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))
 if failures:

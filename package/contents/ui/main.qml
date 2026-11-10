@@ -24,13 +24,6 @@ PlasmoidItem {
     readonly property bool netBits: Plasmoid.configuration.netBits
     readonly property bool showBat: Plasmoid.configuration.showBat
     readonly property bool useF: Plasmoid.configuration.useFahrenheit
-    readonly property bool popupCpu: Plasmoid.configuration.popupCpu
-    readonly property bool popupMemory: Plasmoid.configuration.popupMemory
-    readonly property bool popupTempAvg: Plasmoid.configuration.popupTempAvg
-    readonly property bool popupTempMax: Plasmoid.configuration.popupTempMax
-    readonly property bool popupCores: Plasmoid.configuration.popupCores
-    readonly property bool popupFreq: Plasmoid.configuration.popupFreq
-    readonly property bool popupNet: Plasmoid.configuration.popupNet
     readonly property bool popupBat: Plasmoid.configuration.popupBat
     readonly property bool batSeparate: Plasmoid.configuration.batSeparate
     readonly property bool showFan: Plasmoid.configuration.showFan
@@ -616,16 +609,10 @@ PlasmoidItem {
     // The settings the registry's formatters read (Metrics.js is a pure library: it cannot see root's
     // properties). Every text and width binding reads this property, so it re-evaluates when one changes.
     readonly property var textCtx: ({ useF: useF, netBits: netBits })
-    // Thin wrappers for the popup rows: the formatters live in Metrics.js (M.FORMATS); the settings they
+    // Thin wrappers for the per-battery lines: the formatters live in Metrics.js (M.FORMATS); the settings they
     // need come in through textCtx, read here so the calling binding re-evaluates when they change.
     function pct(v)  { return M.FORMATS.pct(v) }
-    function temp(v) { return M.FORMATS.temp(v, textCtx) }
-    function gib(v)  { return M.FORMATS.gib(v) }
     function wh(v)   { return M.FORMATS.wh(v) }
-    function rate(v) { return M.FORMATS.rate(v, textCtx) }
-    function bytesText(v) { return M.FORMATS.bytes(v) }
-    function ghzNumber(v) { return M.FORMATS.ghz(v) }
-    function freq(v) { return M.FORMATS.freq(v) }
     // The popup's battery row: the percentage, the state arrow and the energy of all batteries.
     // Hours as "3h 12m" or "45m"; empty when it cannot be estimated.
     function hoursText(hours) {
@@ -1271,20 +1258,34 @@ PlasmoidItem {
     // ---- popup ----
     // Built from the user's order: one block per stat (its rows plus its graph). The name column has
     // a fixed width, so values line up from one block to the next.
-    TextMetrics { id: mPopupLabel; font: Kirigami.Theme.defaultFont; text: "CPU temp (max core)" }
-    readonly property real popupLabelWidth: mPopupLabel.width
-
-    function popupShown(id) {
-        switch (id) {
-        case "cpu":  return popupCpu
-        case "ram":  return popupMemory
-        case "temp": return popupTempAvg || popupTempMax || popupCores
-        case "freq": return popupFreq
-        case "net":  return popupNet
-        case "bat":  return popupBatShown
-        case "fan":  return popupFanShown
+    // The name column is as wide as the widest label of the registry's popup rows (one TextMetrics per label,
+    // read inside the binding so it follows a font change).
+    property var popupLabelItems: []
+    Instantiator {
+        id: popupLabelInst
+        model: M.popupLabels(M.METRICS)
+        delegate: TextMetrics {
+            required property string modelData
+            font: Kirigami.Theme.defaultFont
+            text: modelData
         }
-        return false
+        onObjectAdded: {
+            if (count !== M.popupLabels(M.METRICS).length) return
+            var items = []
+            for (var i = 0; i < count; ++i) items.push(objectAt(i))
+            root.popupLabelItems = items
+        }
+    }
+    readonly property real popupLabelWidth: {
+        var w = 0
+        for (var i = 0; i < popupLabelItems.length; ++i) w = Math.max(w, popupLabelItems[i].width)
+        return w
+    }
+
+    // Whether a stat has anything in the popup (its flags and the hardware it needs, from the registry).
+    function popupShown(id) {
+        var m = M.byId(id)
+        return !!m && M.popupOn(m, popupFlags(id))
     }
     function anyPopupShown() {
         for (var i = 0; i < statOrder.length; ++i) if (popupShown(statOrder[i])) return true
