@@ -206,21 +206,39 @@ python3 tests/metrics_test.py
 It needs `python3` with PySide6, a development-only dependency (the widget itself needs neither Python nor PySide6); PySide6's `QJSEngine` is Qt's own JavaScript engine, the one QML uses. The script
 prints one line per failure, a summary, and exits non-zero if anything failed. It checks:
 
-- every panel text the registry renders (full, compact, vertical lines, vertical compact, both temperature
-  units, net in bytes and bits mode) equals the worst-case string `main.qml` uses today: the `m*`
-  `TextMetrics` lines are read from `main.qml` by the script, so editing one there fails the test until the
-  registry follows;
-- the registry's formatters give the same output as the formatting functions in `main.qml` (extracted from it
-  and run in a second engine) over a table of boundary values, plus literal edge cases (rate rollover at
-  999.5, 9.95, 0.8 GHz, rpm, rounding, `--` for non-numbers);
-- alert rules, graph scales, sensor gating and `render()` itself;
+- **the golden data** (`tests/golden/panel_text.json`): the panel text the hand-written code of release
+  v0.9.1 produced, recorded for every stat, full and compact, horizontal and vertical, Celsius and
+  Fahrenheit, bytes and bits, over 48 boundary values (battery over every state, net over pairs of rates),
+  plus every value formatter, the worst-case width-reserve strings, the worst-case vertical lines and the
+  popup's battery row. The registry must reproduce each string exactly;
+- the worst-case strings written out in the script, literal boundary cases of the formatters (rate rollover
+  at 999.5, 9.95, 0.8 GHz, rpm, rounding, `--` for non-numbers), alert rules, graph scales, sensor gating and
+  `render()` itself;
+- how `main.qml` uses the registry: it imports `Metrics.js`, the retired per-stat panel code (`valueText`, the
+  `m*` `TextMetrics`, ...) does not come back, the keys `statVals` supplies equal the keys the templates read,
+  and the settings the formatters read are the ones `textCtx` carries;
 - the structure: unique ids, names equal to the Metrics table and `LengthNotice` labels, sensor ids equal to
   the ones in `main.qml`, and every key of `main.xml` either claimed by one descriptor (with the same
   default) or listed in the script with the reason it stays outside.
 
-Checking widths with real font metrics needs the widget: a temporary copy of `package/` with an overlay that
-prints `fm.advanceWidth(...)` of the registry text next to the existing `m*` widths, run in `plasmawindowed`
-as described under "Testing without touching the real install". Do not commit such an overlay.
+### Golden data
+
+`tests/golden/panel_text.json` is the specification of the panel text. It was generated from the formatting
+and panel-text functions of `main.qml` at `v0.9.1`, before the registry took over, by
+`python3 tests/golden/generate.py [revision]` (the default revision is `v0.9.1`; the script runs those
+functions from `git show <revision>:package/contents/ui/main.qml` in a JavaScript engine with stand-ins for the
+sensors). Do not regenerate it to make a failing test pass: a failure means the panel text changed. Regenerate
+it only when the text is meant to change, and then only from a revision whose `main.qml` still contains those
+functions, so the golden data stays independent of the registry. Review its diff like code: every changed
+string is something the user sees. The file is frozen at the stats of v0.9.1; a new stat is covered by literal
+checks in `metrics_test.py`.
+
+The script cannot measure pixels. Checking widths with real font metrics needs the widget: run a scratch copy
+of `package/` in `plasmawindowed` (see "Testing without touching the real install") with an overlay that prints
+`reservedWidth(...)`, `verticalWidth(...)`, `stripLength(...)` next to `layout.implicitWidth` for every length
+level, with the sensors replaced by scripted values, and compare the output of the old and the new build with
+`diff`. Under `QT_QPA_PLATFORM=offscreen` the layout is updated without a visible window, and with
+`QML_XHR_ALLOW_FILE_WRITE=1` the overlay can write its report to a file. Do not commit such an overlay.
 
 ## No widget tests, no linter
 
