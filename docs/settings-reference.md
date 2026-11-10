@@ -4,26 +4,107 @@ Every configuration key declared in `package/contents/config/main.xml`, grouped 
 
 Notes that apply to every table:
 
+- The tables below use the widget's own key names (`main.xml`). The name each one has in `~/.config/glancerc` is in the Keys table under "Where the settings are stored".
 - "Default" is the value in `main.xml`. The Defaults button in the dialog restores it.
-- Ranges (`min`/`max`) are declared in `main.xml` only for some Int keys. Values outside a declared range written by hand are expected to be clamped by Plasma's config layer (not verified); the widget also clamps a few of them itself (noted per key).
+- Ranges (`min`/`max`) are declared in `main.xml` only for some Int keys. In Plasma's applet config, values outside a declared range written by hand are expected to be clamped by Plasma's config layer (not verified); in `glancerc` an out-of-range value is rejected instead (see below); the widget also clamps a few of them itself (noted per key).
 - The panel shows only stats that are marked "Show" and, for battery and fan, only when that hardware exists (see `batteryCount` and `fanCount`).
 - Stat ids used in several keys: `cpu`, `ram`, `temp`, `freq`, `net`, `bat`, `fan`.
 
 
 ## Where the settings are stored
 
-Glance uses an empty `<kcfgfile name=""/>`, so Plasma keeps the values in the applet's own section of the Plasma applet config file, not in a file of its own:
+Since 1.0 the settings live in a text file, `~/.config/glancerc` (the `GenericConfigLocation` of Qt, so `$XDG_CONFIG_HOME/glancerc` when that variable is set). It is an INI file with three sections:
+
+    [Main]       order, fahrenheit, warnTemp, refreshMs, maxLength
+    [Metrics]    <id>_show, <id>_popup and each stat's options (<id>_<option>)
+    [Graphs]     <id>_panelGraph, <id>_popupGraph, panelStyle, chartStyle, historySeconds
+
+The section is called `Main`, not `General`: QSettings treats `General` as its default group and would write it as `[%General]`. The key names are generated from the metric registry (`Metrics.js`) by `Config.js`, so a new stat gets its keys without any extra step.
+
+How the file and the widget stay in step:
+
+- **At startup** the file is read once. A valid value is applied to the widget. A key the file lacks, or whose value is empty, is written from the widget's current value; this is also how the settings an older version saved in Plasma's own config are carried into the file the first time 1.0 runs. A value that is not valid (wrong type, outside the range, an order with no valid stat id) is left in the file exactly as written, and the widget keeps its current value (the widget issues a `console.warn`, but no log output of it was seen on the author's machine, so do not rely on it).
+- **While the widget runs** every change of a setting (settings dialog, edge drag, Defaults button) is written to the file about a second later (QSettings writes from a timer).
+- **Nothing watches the file.** Hand edits are picked up the next time the widget loads (log out and in, `kquitapp6 plasmashell; kstart plasmashell`, or removing and re-adding the widget). Changing a setting in the dialog while the widget runs rewrites that section from the widget's values, so an edit made to the same section in the meantime is lost. Comments are not kept on a rewrite; unknown sections and keys are.
+- Plasma's own applet config still holds a copy of every setting, because the settings pages and the rest of the widget read and write through it (see below). The file wins at startup.
+- All Glance instances on the machine share this one file.
+
+Values: booleans are `true` / `false` (also `1` / `0`, any case); integers are plain digits within the range below, nothing else (`12.5`, `1e3` and values outside the range are rejected, not clamped). The order is stat ids separated by spaces; an unknown id is ignored, a repeated one is dropped and a missing one is appended in the default order. Do not put commas in a value: an unquoted comma makes QSettings read it as a list.
+
+### Keys
+
+**[Main]**
+
+| Key | Widget setting | Type | Default | Valid values |
+|---|---|---|---|---|
+| `order` | `statOrder` | list | `cpu ram temp freq net bat fan` | stat ids separated by spaces |
+| `fahrenheit` | `useFahrenheit` | bool | `false` | `true`, `false` |
+| `warnTemp` | `warnTemp` | int | `80` | 30 to 120 |
+| `refreshMs` | `refreshMs` | int | `1000` | 250 to 10000 |
+| `maxLength` | `maxLength` | int | `0` | 0 to 5000 |
+
+**[Metrics]**
+
+| Key | Widget setting | Type | Default | Valid values |
+|---|---|---|---|---|
+| `cpu_show` | `showCpu` | bool | `true` | `true`, `false` |
+| `cpu_popup` | `popupCpu` | bool | `true` | `true`, `false` |
+| `ram_show` | `showRam` | bool | `true` | `true`, `false` |
+| `ram_popup` | `popupMemory` | bool | `true` | `true`, `false` |
+| `temp_show` | `showTemp` | bool | `true` | `true`, `false` |
+| `temp_popup` | `popupTempAvg` | bool | `true` | `true`, `false` |
+| `temp_popupMax` | `popupTempMax` | bool | `true` | `true`, `false` |
+| `temp_popupCores` | `popupCores` | bool | `true` | `true`, `false` |
+| `freq_show` | `showFreq` | bool | `false` | `true`, `false` |
+| `freq_popup` | `popupFreq` | bool | `false` | `true`, `false` |
+| `net_show` | `showNet` | bool | `false` | `true`, `false` |
+| `net_popup` | `popupNet` | bool | `false` | `true`, `false` |
+| `net_bits` | `netBits` | bool | `false` | `true`, `false` |
+| `bat_show` | `showBat` | bool | `false` | `true`, `false` |
+| `bat_popup` | `popupBat` | bool | `false` | `true`, `false` |
+| `bat_separate` | `batSeparate` | bool | `false` | `true`, `false` |
+| `fan_show` | `showFan` | bool | `false` | `true`, `false` |
+| `fan_popup` | `popupFan` | bool | `false` | `true`, `false` |
+| `fan_animate` | `fanAnimate` | bool | `true` | `true`, `false` |
+
+**[Graphs]**
+
+| Key | Widget setting | Type | Default | Valid values |
+|---|---|---|---|---|
+| `panelStyle` | `panelGraphStyle` | int | `1` | 0 to 2 |
+| `chartStyle` | `chartStyle` | int | `1` | 0 to 2 |
+| `historySeconds` | `historySeconds` | int | `60` | 30 to 300 |
+| `cpu_panelGraph` | `graphPanelCpu` | bool | `false` | `true`, `false` |
+| `cpu_popupGraph` | `graphPopupCpu` | bool | `false` | `true`, `false` |
+| `ram_panelGraph` | `graphPanelRam` | bool | `false` | `true`, `false` |
+| `ram_popupGraph` | `graphPopupRam` | bool | `false` | `true`, `false` |
+| `temp_panelGraph` | `graphPanelTemp` | bool | `false` | `true`, `false` |
+| `temp_popupGraph` | `graphPopupTemp` | bool | `false` | `true`, `false` |
+| `freq_panelGraph` | `graphPanelFreq` | bool | `false` | `true`, `false` |
+| `freq_popupGraph` | `graphPopupFreq` | bool | `false` | `true`, `false` |
+| `net_panelGraph` | `graphPanelNet` | bool | `false` | `true`, `false` |
+| `net_popupGraph` | `graphPopupNet` | bool | `false` | `true`, `false` |
+| `bat_panelGraph` | `graphPanelBat` | bool | `false` | `true`, `false` |
+| `bat_popupGraph` | `graphPopupBat` | bool | `false` | `true`, `false` |
+| `fan_panelGraph` | `graphPanelFan` | bool | `false` | `true`, `false` |
+| `fan_popupGraph` | `graphPopupFan` | bool | `false` | `true`, `false` |
+
+A stat's options are the extra switches of its popup and panel: `temp_popupMax`, `temp_popupCores`, `net_bits`, `bat_separate`, `fan_animate`. The keys the widget writes about the hardware and the maximum-length state (`batteryCount`, `fanCount`, `length*`) are not in the file; they stay in Plasma's config (see "Hidden keys written by the widget").
+
+### Plasma's applet config (still used)
+
+The schema in `main.xml` is unchanged and still drives the settings pages: Glance uses an empty `<kcfgfile name=""/>`, so Plasma keeps the values in the applet's own section of
 
     ~/.config/plasma-org.kde.plasma.desktop-appletsrc
 
-On the author's machine that file exists and has this shape for the widget (it also holds a `ConfigDialog` group that is not part of `main.xml`) (numbers are per-panel and per-widget instance ids, shown here as N):
+On the author's machine that file has this shape for the widget (it also holds a `ConfigDialog` group that is not part of `main.xml`) (numbers are per-panel and per-widget instance ids, shown here as N):
 
     [Containments][N][Applets][N]                      plugin=org.local.cpumemtemp
     [Containments][N][Applets][N][Configuration][General]
     [Containments][N][Applets][N][Configuration][Popup]
     [Containments][N][Applets][N][Configuration][Graphs]
 
-The three config groups match the `<group>` elements in `main.xml`. Keys that still have their default value may be absent from the file. Each placed widget instance has its own settings. The standalone window started with `plasmawindowed org.local.cpumemtemp` uses a different file, `~/.config/plasmawindowed-appletsrc`; where exactly it stores the widget's values was not verified (on the author's machine that file only held a containment entry).
+The three config groups match the `<group>` elements in `main.xml`. Keys that still have their default value may be absent from the file. Each placed widget instance has its own section there. The standalone window started with `plasmawindowed org.local.cpumemtemp` uses a different file, `~/.config/plasmawindowed-appletsrc`; where exactly it stores the widget's values was not verified (on the author's machine that file only held a containment entry).
 
 ### The plugin ID must never change
 
@@ -31,9 +112,9 @@ The internal plugin ID is `org.local.cpumemtemp` (`package/metadata.json`, `Id`)
 
 ### Resetting
 
-- One page: open the widget's settings and use **Defaults**; then Apply or OK. This sets every key on that page to its `main.xml` default. It does not touch the hidden keys below.
+- One page: open the widget's settings and use **Defaults**; then Apply or OK. This sets every key on that page to its `main.xml` default (and so the file follows). It does not touch the hidden keys below.
 - Maximum length only: double-click the edge handle (adjust mode), or set **Maximum length** to "No limit" (0).
-- Everything for one widget: remove the widget from the panel and add it again; the new instance starts with the defaults.
+- Everything: delete `~/.config/glancerc`, then remove the widget from the panel and add it again; the new instance starts with the defaults. (Deleting only the file is not enough: the widget would write its current values back into a new one.)
 - By hand: with Plasma not running, delete the widget's `[Configuration]` sections from `plasma-org.kde.plasma.desktop-appletsrc`. Back the file up first, because it also holds your whole panel and desktop layout.
 
 ## General tab

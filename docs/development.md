@@ -232,6 +232,28 @@ prints one line per failure, a summary, and exits non-zero if anything failed. I
   `main.qml` (only the per-core pattern), and every key of `main.xml` either claimed by one descriptor (with the same
   default) or listed in the script with the reason it stays outside.
 
+### Settings file test
+
+```
+python3 tests/config_test.py
+```
+
+Same requirements as above (about 10 seconds, because `QtCore.Settings` writes to the file about a second after a
+change). It checks `Config.js` (the rules of `~/.config/glancerc`, see architecture section 15):
+
+- the schema against `main.xml` (every key exists, with the same type, default and range) and against the registry
+  (every stat has its show, popup, option and graph keys; names are unique QML identifiers); every `main.xml` key
+  must be in the schema or listed in the script as written by the widget;
+- `parse`, `toIni` and `plan` on literal cases, including each invalid shape (wrong type, out of range, empty,
+  unknown ids) and the first-run migration (a file with no keys is filled from the widget's values);
+- a real round trip through `QtCore.Settings` in a temp file: a first run writes every key, a valid hand edit wins,
+  an invalid value stays as written, a foreign section survives, a GUI write changes one key and keeps the rest;
+- how `main.qml` / `SettingsFile.qml` use it (one watcher per setting, the startup read waits for the parent to complete, no timer).
+
+To try the file in the real widget, point `XDG_CONFIG_HOME` at a scratch directory with a prepared `glancerc` and
+run `plasmawindowed <path to package>` (one run per command, then a screenshot): the order, shown stats and so on
+follow the file, and the file is completed with every missing key. Never test against your real `~/.config`.
+
 ### Golden data
 
 `tests/golden/panel_text.json` is the specification of the panel text and `tests/golden/scales.json` the

@@ -134,6 +134,12 @@ URL in `metadata.json` point at the GitHub repository.
 
 Right-click the widget in the panel and choose **Configure…**. There are three tabs: General, Metrics and Graphs.
 
+Every setting is also kept in a plain text file, `~/.config/glancerc`, which the widget creates on its first run
+(your settings from an older version are carried over). The dialog writes to it; you can edit it by hand, and
+the widget reads it when it loads (reload Plasma after an edit). See
+[docs/user-guide.md](docs/user-guide.md#the-settings-file) and
+[docs/settings-reference.md](docs/settings-reference.md#where-the-settings-are-stored).
+
 **General**
 
 | Setting | Default |
@@ -270,11 +276,23 @@ package/
   contents/ui/configMetrics.qml settings tab: Metrics
   contents/ui/configGraphs.qml  settings tab: Graphs
   contents/ui/LengthNotice.qml  settings notice about the maximum length
+  contents/ui/Metrics.js        the metric registry (panel text, widths, scales, popup, sensors)
+  contents/ui/Config.js         rules of the settings file (keys, validation, startup plan)
+  contents/ui/SettingsFile.qml  reads and writes ~/.config/glancerc
 install.sh / uninstall.sh
 package.sh                      builds the .plasmoid into dist/
 ```
 
 ## Changelog
+
+**1.0.0**
+- **Settings file.** All settings are now kept in `~/.config/glancerc`, a plain INI file. The widget creates
+  it on first run from your current settings, applies it when it loads, and writes every change you make
+  to it. You can edit it by hand (reload Plasma afterwards); a value that is not valid is ignored and left as
+  you wrote it. It is not watched, so edits made while the widget runs are read at the next load.
+- Internal: the sensors, the popup and the settings pages are now generated from the metric registry (`Metrics.js`),
+  so a new stat needs one descriptor; documented in `docs/`. No visible change to the panel or the popup.
+- Documentation: new settings-file sections in the user guide, settings reference, architecture and development docs.
 
 **0.9.2**
 - Internal refactor, no visible change: panel text, widths, alerts, graph scales and histories now come from

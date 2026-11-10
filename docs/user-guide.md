@@ -19,7 +19,8 @@ Contents:
 6. [Order and what is hidden first](#order-and-what-is-hidden-first)
 7. [Horizontal and vertical panels](#horizontal-and-vertical-panels)
 8. [Settings, task by task](#settings-task-by-task)
-9. [Troubleshooting](#troubleshooting)
+9. [The settings file](#the-settings-file)
+10. [Troubleshooting](#troubleshooting)
 
 To open the settings, right-click the widget in the panel and choose **Configure...**. There are
 three tabs: **General**, **Metrics** and **Graphs**.
@@ -362,9 +363,60 @@ graph.
 
 ---
 
+## The settings file
+
+Besides the dialog, every setting lives in a plain text file, `~/.config/glancerc`. The widget fills it in
+the first time it runs (an upgrade from an older version carries your saved settings into it) and keeps
+it up to date: each change you make in the dialog, by dragging the edge handle or with **Defaults** is written
+to the file within a second or so. It looks like this:
+
+    [Main]
+    order=cpu ram temp freq net bat fan
+    refreshMs=1000
+    warnTemp=80
+
+    [Metrics]
+    cpu_show=true
+    net_show=false
+    net_bits=false
+
+    [Graphs]
+    cpu_panelGraph=false
+    chartStyle=1
+
+You can edit it with any text editor, which is handy for copying your setup to another machine, keeping it in
+a dotfiles repository, or changing many switches at once. The file is read when the widget loads, so after
+an edit reload Plasma (`kquitapp6 plasmashell; kstart plasmashell`) or log out and in; the dialog shows the
+new values afterwards. A few things to know:
+
+- **It is not watched.** Changes you make to the file while the widget is running are not seen until the next
+  load, and if you change a setting in the dialog before that, the widget writes its own values over the same
+  section of the file. Edit the file with Plasma stopped, or reload right after.
+- **A wrong value is ignored, not fixed.** A typo, a number outside the range or `maybe` instead of `true` leaves
+  that setting as it is in the widget, and the line stays in the file as you wrote it so you can correct it.
+  An unknown stat in `order` is skipped and a missing one is appended.
+- **Spaces, not commas.** `order` is a list of stat ids separated by spaces. Do not put commas in a value.
+- Comments in the file are lost the next time the widget writes it; sections and keys it does not know are kept.
+- All Glance widgets on the machine share the file.
+
+Every key, its type, default and valid values are listed in
+[settings-reference.md](settings-reference.md#where-the-settings-are-stored).
+
+---
+
 ## Troubleshooting
 
 See also [README.md#troubleshooting](../README.md#troubleshooting) for install-time problems.
+
+**I edited `~/.config/glancerc` and nothing changed.**
+The file is only read when the widget loads. Reload Plasma (`kquitapp6 plasmashell; kstart plasmashell`).
+If a value still has no effect it is probably not valid (wrong type, outside the range, a comma in a value);
+see [The settings file](#the-settings-file) and settings-reference.md for the valid values. Glance does not show
+an error for an invalid value, it just keeps the current one.
+
+**My edit to the file disappeared.**
+You changed a setting in the dialog (or dragged the edge handle) while the widget was running, which rewrote that
+section from the widget's values. Edit the file with Plasma stopped.
 
 **The widget is empty or shows only a dash (`–`).**
 No stat is switched on for the panel. Open **Configure... > Metrics** and tick **Show** under **In
