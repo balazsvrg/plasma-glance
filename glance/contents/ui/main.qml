@@ -445,8 +445,7 @@ PlasmoidItem {
     function gib(v)   { return isNum(v) ? (v / 1073741824).toFixed(1) + " GiB" : "-- GiB" }
     function rpmText(v) { return rpmNumber(v) + " RPM" }
     function wh(v) { return isNum(v) ? Number(v).toFixed(1) + " Wh" : "-- Wh" }
-    function batArrow() { var a = batArrowShort(); return a ? " " + a : "" }
-    function batText() { return pct(batPercent) + batArrow() }
+    function batText() { return batValue(batPercent, batState, false) }
     // Hours as "3h 12m" or "45m"; empty when it cannot be estimated.
     function hoursText(hours) {
         if (!isFinite(hours) || hours < 0 || hours > 99) return ""
@@ -504,7 +503,9 @@ PlasmoidItem {
     // the first step that fits:
     //   0  full text, graphs as chosen
     //   1  inline graphs become behind-text graphs (those take no length)
-    //   2  compact text (CPU 8% -> C 8%, 2.2 GHz -> 2.2G, ...), still readable
+    //   2  compact text (CPU 8% -> C 8%, 2.2 GHz -> 2.2G, ...), still readable (horizontal panels only:
+    //      on a vertical panel compact text saves no length, so levelList() skips this step and a stat is
+    //      shortened only when its own text is wider than the panel, see statCompact)
     //   3  tight spacing
     // If even that is too long, stats are dropped from the end of the user's order (Fan, Battery, Net,
     // Freq, Temp, RAM in the default order) until it fits. The first stat in the order is never dropped.
@@ -585,6 +586,7 @@ PlasmoidItem {
     TextMetrics { id: mBatC;  font: Kirigami.Theme.defaultFont; text: "B 100%↓" }
     TextMetrics { id: mFan;   font: Kirigami.Theme.defaultFont; text: "9999 RPM" }
     TextMetrics { id: mFanC;  font: Kirigami.Theme.defaultFont; text: "9999" }
+    FontMetrics { id: fm; font: Kirigami.Theme.defaultFont }                        // width of any string
     TextMetrics { id: mLine;  font: Kirigami.Theme.defaultFont; text: "Ag" }       // one line of text
 
     function reservedWidth(id, compact) {
@@ -600,12 +602,36 @@ PlasmoidItem {
         return 0
     }
 
+    // Widest line of a stat's text on a vertical panel (what must fit in the panel's thickness): the
+    // worst-case lines of verticalLines, so the width and the text come from the same code.
+    function verticalWidth(id) {
+        void fm.font                         // re-measure when the font changes (advanceWidth is not bindable)
+        var lines = verticalLines(id, false, true), w = 0
+        for (var i = 0; i < lines.length; ++i) w = Math.max(w, fm.advanceWidth(lines[i]))
+        if (id === "fan") w = Math.max(w, Kirigami.Units.iconSizes.smallMedium)
+        return Math.ceil(w)
+    }
+    // The panel's thickness (set by the vertical compact view); 0 until known or when horizontal.
+    property real panelThickness: 0
+    // Whether a stat's value text is shortened. Horizontal: the length step. Vertical: only this stat's own
+    // full text being wider than the panel (shortening saves no length there, so it is not a length step).
+    function statCompact(id) {
+        if (!vertical) return lengthLevel >= 2
+        // Only these three have a shorter form; measuring the rest could never change their text.
+        if (id !== "temp" && id !== "freq" && id !== "bat") return false
+        return panelThickness > 0 && verticalWidth(id) > panelThickness - Kirigami.Units.smallSpacing * 2
+    }
+
     function tempShort(v) { return tempNumber(v) + "°" }
     function freqShort(v) {
         if (!isNum(v)) return "--G"
         return v >= 1000 ? (v / 1000).toFixed(1) + "G" : Math.round(v) + "M"
     }
-    function batArrowShort() { return batState > 0 ? "↑" : (batState < 0 ? "↓" : "") }
+    function arrowFor(state) { return state > 0 ? "↑" : (state < 0 ? "↓" : "") }
+    function batValue(percent, state, compact) {
+        var a = arrowFor(state)
+        return pct(percent) + (compact ? a : (a ? " " + a : ""))
+    }
     function rpmNumber(v) { return isNum(v) ? String(Math.round(Number(v))) : "--" }
 
     // Per-stat colours, history and graph scale, so a panel cell needs nothing but its id.
@@ -636,26 +662,71 @@ PlasmoidItem {
         return 100
     }
 
-    // The text of a stat in the panel, for the current step (compact or full) and orientation.
-    function statText(id, compact, vert) {
+    // The value of a stat and a worst-case sample of it (the widest it can get, for width calculations).
+    function statValue(id, sample) {
+        switch (id) {
+        case "cpu":  return sample ? 100 : cpuUsage.value
+        case "ram":  return sample ? 100 : memPercent.value
+        case "temp": return sample ? 100 : tempAvg.value
+        case "freq": return sample ? 9900 : freqAvg.value      // 9.9 GHz, as the horizontal reserve
+        case "bat":  return sample ? 100 : batPercent
+        case "fan":  return sample ? 9999 : fanRpm
+        }
+        return 0
+    }
+    // The value part of a stat's text (no caption), shared by the horizontal and the vertical panel.
+    function valueText(id, compact, sample) {
+        var v = statValue(id, sample)
         switch (id) {
         case "cpu":
-            return compact ? "C " + pct(cpuUsage.value) : (vert ? "CPU\n" : "CPU ") + pct(cpuUsage.value)
-        case "ram":
-            return compact ? "R " + pct(memPercent.value) : (vert ? "RAM\n" : "RAM ") + pct(memPercent.value)
-        case "temp":
-            return compact ? tempShort(tempAvg.value) : (vert ? "Temp\n" : "") + temp(tempAvg.value)
-        case "freq":
-            return compact ? freqShort(freqAvg.value) : (vert ? "Freq\n" : "") + freq(freqAvg.value)
-        case "net":
-            if (compact) return "↓" + rateShort(netDown.value) + (vert ? "\n↑" : " ↑") + rateShort(netUp.value)
-            return vert ? "Net\n↓" + rateShort(netDown.value) + "\n↑" + rateShort(netUp.value) : netText()
-        case "bat":
-            return compact ? "B " + pct(batPercent) + batArrowShort() : (vert ? "Bat\n" : "BAT ") + batText()
-        case "fan":
-            return compact ? rpmNumber(fanRpm) : (vert ? "Fan\n" + rpmNumber(fanRpm) : rpmText(fanRpm))
+        case "ram":  return pct(v)
+        case "temp": return compact ? tempShort(v) : temp(v)
+        case "freq": return compact ? freqShort(v) : freq(v)
+        case "bat":  return batValue(v, sample ? 1 : batState, compact)
+        case "fan":  return rpmNumber(v)
         }
         return ""
+    }
+    // Net has two values; in bits mode the sample is scaled so it is the widest in either unit.
+    function netLines(sample) {
+        var d = sample ? (netBits ? 999e6 / 8 : 999e6) : netDown.value
+        var u = sample ? d : netUp.value
+        return ["↓" + rateShort(d), "↑" + rateShort(u)]
+    }
+    // The text of a stat in the panel, for the current step (compact or full) and orientation.
+    // On a vertical panel the caption line is always kept, so it is easy to tell which stat is shown;
+    // only the value line is shortened.
+    function statText(id, compact, vert) {
+        if (vert) return verticalLines(id, compact, false).join("\n")
+        var v = valueText(id, compact, false)
+        switch (id) {
+        case "cpu":  return (compact ? "C " : "CPU ") + v
+        case "ram":  return (compact ? "R " : "RAM ") + v
+        case "temp":
+        case "freq": return v
+        case "net":  { var n = netLines(false); return compact ? n[0] + " " + n[1] : netText() }
+        case "bat":  return (compact ? "B " : "BAT ") + v
+        case "fan":  return compact ? v : rpmText(fanRpm)
+        }
+        return ""
+    }
+    function verticalCaption(id) {
+        switch (id) {
+        case "cpu":  return "CPU"
+        case "ram":  return "RAM"
+        case "temp": return "Temp"
+        case "freq": return "Freq"
+        case "net":  return "Net"
+        case "bat":  return "Bat"
+        case "fan":  return "Fan"
+        }
+        return ""
+    }
+    // The lines of a stat on a vertical panel: caption, then the value line(s). `sample` gives the widest
+    // possible values instead of the live ones.
+    function verticalLines(id, compact, sample) {
+        var cap = verticalCaption(id)
+        return id === "net" ? [cap].concat(netLines(sample)) : [cap, valueText(id, compact, sample)]
     }
 
     // Space one stat takes at a given step (width when horizontal, height when vertical).
@@ -674,8 +745,7 @@ PlasmoidItem {
             if (inlineGraph) w += gap + inlineGraphWidth
             return w
         }
-        var lines = (id === "net" ? 2 : 1) + (compact ? 0 : 1)          // value lines (+ caption line)
-        var h = lines * mLine.height
+        var h = verticalLines(id, false, true).length * mLine.height    // caption + value line(s)
         if (id === "fan") h += Kirigami.Units.iconSizes.smallMedium
         if (inlineGraph) h += Kirigami.Units.gridUnit
         return h
@@ -698,11 +768,15 @@ PlasmoidItem {
         // 1 px in every test, however many stats), so the strip stays at or under the limit.
         return Math.ceil(total + (n - 1) * (1 + 2 * gap)) + 1
     }
+    // The steps the strip can take, longest first. Step 2 (compact text) saves no length on a vertical panel,
+    // so it is skipped there.
+    function levelList() { return vertical ? [0, 1, 3] : [0, 1, 2, 3] }
     function computeFit() {
         var ids = shownIds()
         if (maxLength <= 0 || ids.length === 0) return { level: 0, drop: 0 }
-        for (var level = 0; level <= 3; ++level)
-            if (stripLength(level, 0) <= maxLength) return { level: level, drop: 0 }
+        var levels = levelList()
+        for (var k = 0; k < levels.length; ++k)
+            if (stripLength(levels[k], 0) <= maxLength) return { level: levels[k], drop: 0 }
         for (var drop = 1; drop < ids.length; ++drop)
             if (stripLength(3, drop) <= maxLength) return { level: 3, drop: drop }
         return { level: 3, drop: ids.length - 1 }                         // only the first stat is left
@@ -711,7 +785,6 @@ PlasmoidItem {
     // otherwise it follows the saved limit.
     readonly property var fit: dragging ? dragFit() : computeFit()
     readonly property int lengthLevel: fit.level
-    readonly property bool textCompact: lengthLevel >= 2
     // The shown stats split into those that fit and those dropped from the end to fit.
     readonly property var visibleIds: { var ids = shownIds(); return ids.slice(0, ids.length - fit.drop) }
     readonly property var droppedIds: { var ids = shownIds(); return ids.slice(ids.length - fit.drop) }
@@ -738,7 +811,8 @@ PlasmoidItem {
     function configs() {
         var list = []
         var n = shownIds().length
-        for (var level = 0; level <= 3; ++level) list.push({ level: level, drop: 0, len: stripLength(level, 0) })
+        var levels = levelList()
+        for (var k = 0; k < levels.length; ++k) list.push({ level: levels[k], drop: 0, len: stripLength(levels[k], 0) })
         for (var drop = 1; drop < n; ++drop) list.push({ level: 3, drop: drop, len: stripLength(3, drop) })
         return list
     }
@@ -821,12 +895,14 @@ PlasmoidItem {
         var inlineOff = graphInline && !inlineGraphsAt(fit.level) && graphVisible
         var dropped = ids.slice(keep).join(",")
         setCfg("lengthLevel", fit.level)
+        setCfg("lengthTextShort", !vertical && fit.level >= 2)
         setCfg("lengthDropped", dropped)
         setCfg("lengthInlineOff", inlineOff)
     }
     // Run after the current round of binding updates has settled.
     onFitChanged: Qt.callLater(syncLengthInfo)
     onDraggingChanged: Qt.callLater(syncLengthInfo)
+    onVerticalChanged: Qt.callLater(syncLengthInfo)
     Component.onCompleted: Qt.callLater(syncLengthInfo)
 
     function cellShown(id) { return visibleIds.indexOf(id) >= 0 }
@@ -842,6 +918,7 @@ PlasmoidItem {
         onClicked: root.expanded = !root.expanded
 
         readonly property bool vertical: root.vertical
+        Binding { target: root; property: "panelThickness"; value: compact.vertical ? compact.width : 0 }
 
         // Decide which edge gets the drag handle from where this widget sits in the panel.
         function updateHandleSide() {
@@ -913,9 +990,12 @@ PlasmoidItem {
 
             GridLayout {
                 id: content
-                // Centred at its natural size on a horizontal strip; filling the width when vertical.
-                anchors.fill: compact.vertical ? parent : undefined
-                anchors.centerIn: compact.vertical ? undefined : parent
+                // Centred at its natural size on a horizontal strip; filling the cell when vertical. Sizes are
+                // bound explicitly: switching between anchors.fill and centerIn leaves the last filled size
+                // behind after an orientation change while running, which scrambled the horizontal strip.
+                anchors.centerIn: parent
+                width: compact.vertical ? parent.width : implicitWidth
+                height: compact.vertical ? parent.height : implicitHeight
                 columns: compact.vertical ? 1 : (cell.fan ? 3 : 2)
                 columnSpacing: Kirigami.Units.smallSpacing
                 rowSpacing: 0
@@ -929,13 +1009,13 @@ PlasmoidItem {
                 }
                 PlasmaComponents.Label {
                     Layout.alignment: Qt.AlignCenter
-                    Layout.minimumWidth: compact.vertical ? 0 : root.reservedWidth(cell.statId, root.textCompact)
-                    Layout.preferredWidth: compact.vertical ? -1 : root.reservedWidth(cell.statId, root.textCompact)
+                    Layout.minimumWidth: compact.vertical ? 0 : root.reservedWidth(cell.statId, root.statCompact(cell.statId))
+                    Layout.preferredWidth: compact.vertical ? -1 : root.reservedWidth(cell.statId, root.statCompact(cell.statId))
                     Layout.fillWidth: compact.vertical
                     horizontalAlignment: Text.AlignHCenter
                     fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
                     minimumPixelSize: 8
-                    text: root.statText(cell.statId, root.textCompact, compact.vertical)
+                    text: root.statText(cell.statId, root.statCompact(cell.statId), compact.vertical)
                     color: cell.textColor
                 }
                 Spark {
