@@ -464,8 +464,8 @@ PlasmoidItem {
         var x = netBits ? Number(v) * 8 : Number(v)
         var units = netBits ? ["b", "Kb", "Mb", "Gb"] : ["B", "KB", "MB", "GB"]
         var i = 0
-        while (x >= 1000 && i < 3) { x /= 1000; i++ }
-        return { n: (x >= 10 || i === 0) ? String(Math.round(x)) : x.toFixed(1), unit: units[i] }
+        while (x >= 999.5 && i < 3) { x /= 1000; i++ }       // 999.6 would round to "1000"
+        return { n: (x >= 9.95 || i === 0) ? String(Math.round(x)) : x.toFixed(1), unit: units[i] }
     }
     function rate(v)      { if (!isNum(v)) return "--"; var p = rateParts(v); return p.n + " " + p.unit + "/s" }
     function rateShort(v) { if (!isNum(v)) return "--"; var p = rateParts(v); return p.n + p.unit.charAt(0) }
