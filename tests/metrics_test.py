@@ -12,7 +12,9 @@ when any check fails. What it checks:
   4. the structure: unique ids, labels, sensor ids, and every settings key of main.xml accounted for;
   5. the registry against tests/golden/panel_text.json: the panel text the hand-written code of release
      v0.9.1 produced for every stat, kind, orientation and unit mode over a grid of values (regenerate it
-     only on purpose, see tests/golden/generate.py).
+     only on purpose, see tests/golden/generate.py);
+  6. the registry against tests/golden/scales.json: the alerts, colours, graph scales and the peak sequences
+     (freq, net, fan) of the same code.
 """
 import json
 import os
@@ -144,7 +146,11 @@ check("main.qml imports Metrics.js", re.search(r'^import "Metrics\.js" as M$', M
 for gone in ("function valueText", "function netLines", "function verticalCaption", "function statValue", "function netText",
              "function rateParts", "function batValue", "function arrowFor", "function tempShort", "function freqShort",
              "function rpmNumber", "function tempNumber", "function rateShort", "function batText",
-             "TextMetrics { id: mCpu", "TextMetrics { id: mFan", "TextMetrics { id: mNet", "TextMetrics { id: mTemp"):
+             "TextMetrics { id: mCpu", "TextMetrics { id: mFan", "TextMetrics { id: mNet", "TextMetrics { id: mTemp",
+             "property bool avgHot", "property bool batLow", "property real freqPeak", "property real netPeak",
+             "property real fanPeak", "function trackNetPeak", "tempYMin", "tempYMax", "History { id: cpuHistory",
+             "History { id: netDownHistory", "History { id: batHistory", "property var cpuHist", "property var netUpHist",
+             "var all = [cpuHistory"):
     check("main.qml no longer has `%s`" % gone, gone not in MAIN_QML)
 check("statText delegates to M.panelText", "M.panelText(m, compact, vert, statVals(id), textCtx)" in MAIN_QML)
 check("verticalLines delegates to M.verticalLines", "M.verticalLines(m, compact," in MAIN_QML)
@@ -152,6 +158,36 @@ check("the horizontal reserve is rendered by M.reserveText", "text: M.reserveTex
 check("the reserve items come from the registry's entries", "M.METRICS.length" in MAIN_QML and "model: root.reserveKinds" in MAIN_QML)
 check("statCompact asks the registry which stats have a shorter vertical form", "m.panel.verticalCompact" in MAIN_QML)
 check("the icon width comes from the registry's decoration", 'm.panel.decoration === "fanIcon"' in MAIN_QML)
+check("statAlert delegates to M.alertOf", "M.alertOf(m, statVals(id), limitCtx)" in MAIN_QML)
+check("the popup's max-core alert is the registry's row alert", 'M.byId("temp").popup.rows[1].alert(' in MAIN_QML)
+check("limitCtx carries exactly the warning temperature", re.search(r'limitCtx: \(\{ warnTempC: warnTempC \}\)', MAIN_QML) is not None)
+check("statYTo asks the registry for the scale end", "M.scaleEnd(m, limitCtx, M.followsData(m) ? peakOf(id) : 0)" in MAIN_QML)
+check("statYFrom asks the registry", "M.scaleFrom(m)" in MAIN_QML)
+check("the peak step is the registry's", "M.stepPeak(M.byId(id), prev, scaleVals(id), ctx, refreshMs)" in MAIN_QML)
+# The three triggers of a peak step stay where the old per-stat code ran, and nowhere else.
+equal("peak triggers", sorted(re.findall(r'stepPeak\("(\w+)"\)', MAIN_QML)), ["fan", "freq", "net"])
+check("freq steps from the maximum-frequency sensor", re.search(r'id: freqMax.*?onValueChanged: root\.stepPeak\("freq"\)', MAIN_QML, re.S) is not None)
+check("net steps from the download sensor", re.search(r'id: netDown.*?onValueChanged: root\.stepPeak\("net"\)', MAIN_QML, re.S) is not None)
+check("fan steps from the fan speed", 'onFanRpmChanged: root.stepPeak("fan")' in MAIN_QML)
+# scaleVals() hands each following scale the keys the registry says it watches.
+sv = re.search(r'function scaleVals\(id\) \{(.*?)\n    \}', MAIN_QML, re.S).group(1)
+watched = {sid: sorted(re.findall(r'(\w+):', body)) for sid, body in re.findall(r'case "(\w+)":\s+return \{(.*?)\}', sv)}
+equal("scaleVals covers exactly the following scales", sorted(watched), run(M, "METRICS.filter(followsData).map(function(m){return m.id}).sort()"))
+for sid, keys in watched.items():
+    equal("scaleVals of %s supplies the keys its scale observes" % sid, keys, sorted(run(M, "byId(%s).scale.observe.keys" % json.dumps(sid))))
+# One History per registry series, created from the registry (not one hand-written item per stat).
+check("the histories come from the registry's series", "model: root.historyKinds" in MAIN_QML and "M.METRICS[i].series[j]" in MAIN_QML)
+check("a history is wanted by the stat's graph and shown flags", "wanted: root.historyWanted(modelData.id)" in MAIN_QML)
+hs = re.search(r'historySensors: \(\{(.*?)\}\)', MAIN_QML, re.S).group(1)
+equal("every registry series has a sensor object for its history",
+      sorted(re.findall(r'"(\w+\.\w+)":', hs)),
+      sorted(run(M, "(function(){var o=[];METRICS.forEach(function(m){m.series.forEach(function(s){o.push(m.id+'.'+s)})});return o})()")))
+for gone in ("readonly property bool gpCpu", "readonly property bool gdFan", "readonly property bool gpNet"):
+    check("main.qml no longer has `%s` (the graph flags are read through the registry's keys)" % gone, gone not in MAIN_QML)
+check("statGraph reads the registry's gp key", "Plasmoid.configuration[m.keys.gp]" in MAIN_QML)
+check("statPopupGraph reads the registry's gd key", "Plasmoid.configuration[m.keys.gd]" in MAIN_QML)
+check("statPopupOn reads the registry's popup key", "Plasmoid.configuration[m.keys.popup]" in MAIN_QML)
+check("statHistory and statHistory2 take the first and second series", "historyOf(id, m.series[0])" in MAIN_QML and "historyOf(id, m.series[1])" in MAIN_QML)
 # The settings the formatters read must be the ones main.qml puts into the context: a formatter that starts
 # reading another setting would silently get undefined.
 fmt_src = re.search(r'var FORMATS = \{(.*?)\n\}\n', METRICS_JS, re.S).group(1) + re.search(r'function rateParts.*?\n\}\nfunction tempNumber.*?\n\}', METRICS_JS, re.S).group(0)
@@ -320,15 +356,14 @@ equal("per-core sensor pattern", run(M, "byId('temp').popup.repeat.sensor"), "cp
 check("main.qml builds the per-core id the same way", '"cpu/cpu" + coreRow.index + "/temperature"' in MAIN_QML)
 equal("fan discovery pattern equals main.qml's", "/" + run(M, "byId('fan').source.pattern").replace("/", "\\/") + "/",
       "/" + re.search(r'if \(/(.*?)/\.test\(id\)\)', MAIN_QML).group(1) + "/")
-# Constants of the scales and the fan discovery, as written in main.qml.
-for what, snippet in (("temp scale start", "tempYMin: 20"), ("temp scale end", "Math.max(100, warnTempC + 10)"),
-                      ("net floor and decay", "Math.max(100000, barChart ? d + u : Math.max(d, u), netPeak * Math.pow(0.99, refreshMs / 1000))"),
-                      ("freq floor", "property real freqPeak: 1000"), ("fan floor", "property real fanPeak: 3000"),
-                      ("battery low", "batPercent < 15 && batState <= 0"), ("battery refresh", "interval: 5000"),
+# Constants of the battery refresh and the fan discovery, as written in main.qml.
+for what, snippet in (("battery refresh", "interval: 5000"),
                       ("fan attempts", "readonly property int maxAttempts: 10"), ("fan first scan", "interval: 800"),
                       ("fan retry", "fanScan.interval = 3000")):
     check("main.qml still says: %s" % what, snippet in MAIN_QML)
-equal("registry net scale", run(M, "byId('net').scale"), {"from": 0, "mode": "decay", "floor": 100000, "decay": 0.99, "observe": "down,up"})
+equal("registry net scale", run(M, "byId('net').scale"),
+      {"from": 0, "mode": "decay", "floor": 100000, "decay": 0.99, "needsGraph": True,
+       "observe": {"keys": ["down", "up"], "combine": "max", "barCombine": "sum"}})
 equal("registry fan source numbers", run(M, "[byId('fan').source.firstScanMs,byId('fan').source.retryMs,byId('fan').source.maxAttempts]"), [800, 3000, 10])
 equal("registry battery interval", run(M, "byId('bat').source.intervalMs"), 5000)
 
@@ -398,6 +433,89 @@ for p, st, en, want in GOLDEN["popupBattery"]:
     bad += got != want
 check("popup battery row", bad == 0, "%d mismatches" % bad)
 check("golden data was compared (%d values)" % compared, compared > 5000)
+
+# ---------------------------------------------------------------- 6. golden alerts, colours, scales and peaks
+print("6. registry against the golden alerts, scales and peaks (tests/golden/scales.json)")
+SC = json.load(open(os.path.join(ROOT, "tests", "golden", "scales.json"), encoding="utf-8"))
+STATS = run(M, "DEFAULT_ORDER")
+compared = 0
+M.evaluate("function alertById(id, vals, warn) { return alertOf(byId(id), vals, { warnTempC: warn }) }")
+M.evaluate("function alerting(vals, warn) { return DEFAULT_ORDER.filter(function (id) { return alertById(id, vals, warn) }) }")
+
+
+def jsarr(rows):
+    return "[" + ",".join("[" + ",".join(str(x) for x in r) + "]" for r in rows) + "]"
+
+
+# Temperature. avgHot is the temp alert; tempHot is the popup's "max core" row alert.
+temp_in = jsarr([[r[0], r[1]] for r in SC["temp"]])
+got = run(M, "%s.map(function(r){var w=r[0],v=r[1];return [alertById('temp',{value:v},w),byId('temp').popup.rows[1].alert({max:v},{warnTempC:w})]})" % temp_in)
+equal("avgHot / tempHot over warn x value", got, [[r[2], r[3]] for r in SC["temp"]])
+got = run(M, "%s.map(function(r){var w=r[0],v=r[1];return alerting({value:v},w)})" % temp_in)
+equal("the alerting stats over warn x value", got, [r[4] for r in SC["temp"]])
+compared += 2 * len(got)
+# Colours: the alert picks the negative colour (the colour names are the stand-ins of the golden run).
+want_color = lambda alert, normal: "NEG" if alert else normal
+equal("temp text / line colour follow the alert",
+      [[want_color(r[4] and "temp" in r[4], "TEXT"), want_color(r[4] and "temp" in r[4], "HIGHLIGHT")] for r in SC["temp"]],
+      [[r[5], r[6]] for r in SC["temp"]])
+
+# Battery.
+bat_in = jsarr([[r[0], r[1]] for r in SC["bat"]])
+got = run(M, "%s.map(function(r){return [alertById('bat',{percent:r[0],state:r[1]},80),alerting({percent:r[0],state:r[1]},80)]})" % bat_in)
+equal("batLow over percent x state", [g[0] for g in got], [r[2] for r in SC["bat"]])
+equal("the alerting stats over percent x state", [g[1] for g in got], [r[3] for r in SC["bat"]])
+equal("bat colours follow the alert", [[want_color(r[2], "TEXT"), want_color(r[2], "HIGHLIGHT")] for r in SC["bat"]],
+      [[r[4], r[5]] for r in SC["bat"]])
+compared += len(got)
+
+# Both at once: per stat [alert, text colour, line colour].
+for t, p, st, per in SC["all"]:
+    al = run(M, "alerting({value:%s,percent:%s,state:%d},80)" % (t, p, st))
+    got = {x: [x in al, "NEG" if x in al else "TEXT", "NEG" if x in al else "HIGHLIGHT"] for x in STATS}
+    compared += len(STATS)
+    equal("alerts and colours of every stat (temp=%s bat=%s/%d)" % (t, p, st), got, per)
+
+# Scale range of every stat: from scaleFrom, to scaleEnd (a following scale ends at the caller's peak).
+RANGE = "(function(id,w,peak){var m=byId(id);return [scaleFrom(m),scaleEnd(m,{warnTempC:w},peak)]})"
+for warn, per in SC["range by warn"]:
+    got = {x: run(M, "%s('%s',%r,byId('%s').scale.floor)" % (RANGE, x, warn, x)) for x in STATS}
+    compared += len(STATS)
+    equal("scale range at warn %r (peaks at their start)" % warn, got, per)
+for peaks, per in SC["range by peak"]:
+    pk = dict(zip(("freq", "net", "fan"), peaks))
+    got = {x: run(M, "%s('%s',80,%r)" % (RANGE, x, pk.get(x, 0))) for x in STATS}
+    compared += len(STATS)
+    equal("scale range at peaks %r" % peaks, got, per)
+equal("the following scales are exactly freq, net and fan", run(M, "METRICS.filter(followsData).map(function(m){return m.id})"), ["freq", "net", "fan"])
+
+# Peak sequences.
+def peak_run(stat, steps, bar=False, graph=True):
+    """The registry's scale stepped through `steps` the way main.qml's handlers do it."""
+    out, prev = [], run(M, "byId('%s').scale.floor" % stat)
+    for step in steps:
+        if stat == "net":
+            d, u, ms = step
+            vals, dt = "{down:%s,up:%s}" % (d, u), ms
+        else:
+            vals, dt = "{%s:%s}" % ("max" if stat == "freq" else "value", step), 1000
+        prev = run(M, "stepPeak(byId('%s'),%r,%s,{barChart:%s,graphOn:%s},%d)" % (
+            stat, prev, vals, str(bar).lower(), str(graph).lower(), dt))
+        out.append(prev)
+    return out
+
+
+for key, want in sorted(SC["peaks"]["net"].items()):
+    style, flags, name = key.split("|")
+    got = peak_run("net", SC["sequences"]["net"][name], bar=(style == "bar"), graph="gp=0 gd=0" not in flags)
+    compared += len(want)
+    equal("net peak %s" % key, got, want)
+for stat in ("freq", "fan"):
+    for name, want in sorted(SC["peaks"][stat].items()):
+        got = peak_run(stat, SC["sequences"][stat][name])
+        compared += len(want)
+        equal("%s peak, sequence '%s'" % (stat, name), got, want)
+check("scale golden data was compared (%d values)" % compared, compared > 3000)
 
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))

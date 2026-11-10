@@ -211,26 +211,39 @@ prints one line per failure, a summary, and exits non-zero if anything failed. I
   Fahrenheit, bytes and bits, over 48 boundary values (battery over every state, net over pairs of rates),
   plus every value formatter, the worst-case width-reserve strings, the worst-case vertical lines and the
   popup's battery row. The registry must reproduce each string exactly;
+- **the golden alerts and scales** (`tests/golden/scales.json`): from the same v0.9.1 code, `statAlert`,
+  `avgHot` / `tempHot` / `batLow` and the text and line colours over a grid (warning temperature 0..200 with
+  the values just below, at and above it, every battery percent and state, both at once), `statYFrom` /
+  `statYTo` of every stat over warning temperatures and peak states, and the peak sequences: scripted series
+  of sensor values (random with a fixed seed, a spike followed by 150 s of decay, growth, never numeric, below the floor)
+  for the frequency, network (line and bar, each graph-flag combination, several refresh intervals) and fan
+  scales, with the peak recorded after every step. The registry (`alertOf`, `scaleFrom`, `scaleEnd`,
+  `stepPeak`) must reproduce every number exactly;
 - the worst-case strings written out in the script, literal boundary cases of the formatters (rate rollover
   at 999.5, 9.95, 0.8 GHz, rpm, rounding, `--` for non-numbers), alert rules, graph scales, sensor gating and
   `render()` itself;
 - how `main.qml` uses the registry: it imports `Metrics.js`, the retired per-stat panel code (`valueText`, the
-  `m*` `TextMetrics`, ...) does not come back, the keys `statVals` supplies equal the keys the templates read,
-  and the settings the formatters read are the ones `textCtx` carries;
+  `m*` `TextMetrics`, the per-stat peak properties and `History` items, the `gp*` / `gd*` flags, ...) does not
+  come back, the keys `statVals` and `scaleVals` supply equal the keys the templates and the scales read,
+  `historySensors` covers every registry series, and the settings the formatters read are the ones `textCtx`
+  carries;
 - the structure: unique ids, names equal to the Metrics table and `LengthNotice` labels, sensor ids equal to
   the ones in `main.qml`, and every key of `main.xml` either claimed by one descriptor (with the same
   default) or listed in the script with the reason it stays outside.
 
 ### Golden data
 
-`tests/golden/panel_text.json` is the specification of the panel text. It was generated from the formatting
-and panel-text functions of `main.qml` at `v0.9.1`, before the registry took over, by
+`tests/golden/panel_text.json` is the specification of the panel text and `tests/golden/scales.json` the
+specification of the alerts, colours, graph scales and peaks. Both were generated from the hand-written
+functions of `main.qml` at `v0.9.1`, before the registry took over, by
 `python3 tests/golden/generate.py [revision]` (the default revision is `v0.9.1`; the script runs those
 functions from `git show <revision>:package/contents/ui/main.qml` in a JavaScript engine with stand-ins for the
-sensors). Do not regenerate it to make a failing test pass: a failure means the panel text changed. Regenerate
+sensors; one run rewrites both files). The old peak code reads no clock: the network decay uses the
+refresh interval as its elapsed time, so the sequences in `scales.json` carry an explicit interval per step and
+the data is deterministic. Do not regenerate it to make a failing test pass: a failure means the panel text changed. Regenerate
 it only when the text is meant to change, and then only from a revision whose `main.qml` still contains those
 functions, so the golden data stays independent of the registry. Review its diff like code: every changed
-string is something the user sees. The file is frozen at the stats of v0.9.1; a new stat is covered by literal
+string is something the user sees. The files are frozen at the stats of v0.9.1; a new stat is covered by literal
 checks in `metrics_test.py`.
 
 The script cannot measure pixels. Checking widths with real font metrics needs the widget: run a scratch copy

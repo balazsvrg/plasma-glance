@@ -42,6 +42,41 @@ PlasmoidItem {
         if (c[key] !== value) c[key] = value
     }
 
+    // ---- graph scale peaks ----
+    // A graph scale that follows the data (registry: scale.mode, i.e. frequency, network and fan) needs a peak that
+    // outlives the individual values. The peak is state, so it lives here: `peaks` maps a stat id to its current
+    // peak (missing: the scale's floor, the start value). Metrics.js computes every step (M.stepPeak, a pure
+    // function); the three triggers below call stepPeak() exactly where the old per-stat code ran: the frequency
+    // maximum, the network download value and the fan speed changing. `peaks` is replaced, never changed in place,
+    // so a binding that reads a peak is notified; a plain map (not objects created at start-up) also means a step
+    // taken while the item tree is still being created is not lost.
+    property var peaks: ({})
+    function peakOf(id) {
+        var p = peaks[id]
+        return p === undefined ? M.byId(id).scale.floor : p
+    }
+    // What the scale of a stat watches (registry: scale.observe.keys), read live from its sensors.
+    function scaleVals(id) {
+        switch (id) {
+        case "freq": return { max: freqMax.value }
+        case "net":  return { down: netDown.value, up: netUp.value }
+        case "fan":  return { value: fanRpm }
+        }
+        return {}
+    }
+    // One step of a stat's peak. The time that passed since the last step is the refresh interval (the triggers
+    // run once per sensor update), so the decay of the network scale is about 1% per second whatever the rate.
+    function stepPeak(id) {
+        var prev = peakOf(id)
+        var ctx = { barChart: barChart, graphOn: statGraph(id) || statPopupGraph(id) }
+        var next = M.stepPeak(M.byId(id), prev, scaleVals(id), ctx, refreshMs)
+        if (next === prev) return
+        var map = {}
+        for (var k in peaks) map[k] = peaks[k]
+        map[id] = next
+        peaks = map
+    }
+
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
     // A sensor is switched off when nothing shows its stat, so nothing polls for data nobody sees.
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs; enabled: root.showCpu || root.popupCpu }
@@ -59,30 +94,19 @@ PlasmoidItem {
         enabled: root.showFreq || root.popupFreq
         // The hardware maximum is not a sensor, so the frequency graph's scale
         // grows to the highest value seen (never below 1 GHz).
-        onValueChanged: if (root.isNum(value) && value > root.freqPeak) root.freqPeak = value
+        onValueChanged: root.stepPeak("freq")
     }
-    property real freqPeak: 1000
     // Network, all interfaces combined (bytes per second; totals in bytes since boot).
     Sensors.Sensor {
         id: netDown
         sensorId: "network/all/download"
         updateRateLimit: root.refreshMs
         enabled: root.showNet || root.popupNet
-        onValueChanged: root.trackNetPeak()          // once per refresh (upload updates in the same tick)
+        onValueChanged: root.stepPeak("net")         // once per refresh (upload updates in the same tick)
     }
     Sensors.Sensor { id: netUp; sensorId: "network/all/upload"; updateRateLimit: root.refreshMs; enabled: root.showNet || root.popupNet }
     Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
     Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
-    // Network graph scale: rises at once to the highest rate (down or up) and decays about 1% per
-    // second of real time, whatever the refresh rate; never below 100 KB/s. Bar graphs stack download
-    // and upload, so they need the scale to cover the sum; the line graph keeps the higher of the two.
-    property real netPeak: 100000
-    function trackNetPeak() {
-        if (!(gpNet || gdNet)) return                  // the scale only matters to a graph
-        var d = isNum(netDown.value) ? Number(netDown.value) : 0
-        var u = isNum(netUp.value) ? Number(netUp.value) : 0
-        netPeak = Math.max(100000, barChart ? d + u : Math.max(d, u), netPeak * Math.pow(0.99, refreshMs / 1000))
-    }
     // ---- battery ----
     // Data comes from Plasma's power-management engine, the same source KDE's own
     // battery widget uses. (KDE's ksystemstats power sensors lag and disagree with
@@ -116,7 +140,6 @@ PlasmoidItem {
     readonly property var batPercent: isNum(batterySummary["Percent"]) ? Number(batterySummary["Percent"]) : undefined
     readonly property int batState: batterySummary["State"] === "Charging" ? 1
                                     : (batterySummary["State"] === "Discharging" ? -1 : 0)
-    readonly property bool batLow: isNum(batPercent) && batPercent < 15 && batState <= 0
     function batEnergyTotal() {          // Wh held across all batteries
         var total = 0, any = false
         for (var i = 0; i < batterySources.length; ++i) {
@@ -227,9 +250,7 @@ PlasmoidItem {
     readonly property var fanRpm: fanRpmMax()
     // 0 stopped, 1 slow, 2 medium, 3 fast: drives the icon's spin speed.
     readonly property int fanLevel: !isNum(fanRpm) || fanRpm <= 0 ? 0 : (fanRpm < 2500 ? 1 : (fanRpm < 4000 ? 2 : 3))
-    // Graph scale: grows to the highest RPM seen, never below 3000.
-    property real fanPeak: 3000
-    onFanRpmChanged: if (isNum(fanRpm) && Number(fanRpm) > fanPeak) fanPeak = Number(fanRpm)
+    onFanRpmChanged: root.stepPeak("fan")
     QtObject { id: fanSensor; readonly property var value: root.fanRpm }
 
     // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
@@ -244,28 +265,13 @@ PlasmoidItem {
     readonly property bool graphInline: panelGraphStyle === styleInline   // anything else (incl. an old 0) is "behind"
     readonly property int chartStyleBar: 2   // stored value of "Bar"; keep in sync with configGraphs.qml (1 = line)
     readonly property bool barChart: Plasmoid.configuration.chartStyle === chartStyleBar   // anything else is "line"
-    // Which stats get a graph: gp* in the panel, gd* in the popup (Metrics tab).
-    readonly property bool gpCpu:  Plasmoid.configuration.graphPanelCpu
-    readonly property bool gpRam:  Plasmoid.configuration.graphPanelRam
-    readonly property bool gpTemp: Plasmoid.configuration.graphPanelTemp
-    readonly property bool gpFreq: Plasmoid.configuration.graphPanelFreq
-    readonly property bool gpNet:  Plasmoid.configuration.graphPanelNet
-    readonly property bool gpBat:  Plasmoid.configuration.graphPanelBat
-    readonly property bool gpFan:  Plasmoid.configuration.graphPanelFan
-    readonly property bool gdCpu:  Plasmoid.configuration.graphPopupCpu
-    readonly property bool gdRam:  Plasmoid.configuration.graphPopupRam
-    readonly property bool gdTemp: Plasmoid.configuration.graphPopupTemp
-    readonly property bool gdFreq: Plasmoid.configuration.graphPopupFreq
-    readonly property bool gdNet:  Plasmoid.configuration.graphPopupNet
-    readonly property bool gdBat:  Plasmoid.configuration.graphPopupBat
-    readonly property bool gdFan:  Plasmoid.configuration.graphPopupFan
     readonly property int historySeconds: Math.min(300, Math.max(30, Plasmoid.configuration.historySeconds))
     readonly property int historyLen: Math.max(2, Math.round(historySeconds * 1000 / refreshMs))
-    readonly property real tempYMin: 20                               // temperature graph scale: tempYMin .. tempYMax
-    readonly property real tempYMax: Math.max(100, warnTempC + 10)
 
     component History: Loader {
         id: hist
+        property string statId                // registry id and series name: how the history is looked up
+        property string series
         property var sensor
         property bool wanted: false
         property bool ready: false          // latched once the sensor has reported a number
@@ -309,30 +315,56 @@ PlasmoidItem {
         }
     }
 
-    History { id: cpuHistory;  sensor: cpuUsage;  wanted: (root.gpCpu && root.showCpu)  || (root.gdCpu && root.popupCpu) }
-    History { id: ramHistory;  sensor: memPercent; wanted: (root.gpRam && root.showRam)  || (root.gdRam && root.popupMemory) }
-    History { id: tempHistory; sensor: tempAvg;   wanted: (root.gpTemp && root.showTemp) || (root.gdTemp && root.popupTempAvg) }
-    History { id: freqHistory; sensor: freqAvg;   wanted: (root.gpFreq && root.showFreq) || (root.gdFreq && root.popupFreq) }
-    History { id: netDownHistory; sensor: netDown; wanted: (root.gpNet && root.showNet) || (root.gdNet && root.popupNet) }
-    History { id: netUpHistory;   sensor: netUp;   wanted: netDownHistory.wanted }
-    History { id: fanHistory;     sensor: fanSensor; wanted: (root.gpFan && root.fanShown) || (root.gdFan && root.popupFanShown) }
-    History { id: batHistory;     sensor: batSensor; wanted: (root.gpBat && root.batShown) || (root.gdBat && root.popupBatShown) }
-
-    readonly property var cpuHist:  cpuHistory.historySource
-    readonly property var ramHist:  ramHistory.historySource
-    readonly property var tempHist: tempHistory.historySource
-    readonly property var freqHist: freqHistory.historySource
-    readonly property var netDownHist: netDownHistory.historySource
-    readonly property var netUpHist: netUpHistory.historySource
-    readonly property var batHist: batHistory.historySource
-    readonly property var fanHist: fanHistory.historySource
-    // The bar graphs' sample store belonging to one of the history sources above.
+    // One History per series of each registry entry (`series`: net has two, down and up), created by the Repeater
+    // below. A History exists (is active) only while a graph of its stat is enabled (see historyWanted) and its
+    // sensor has reported a number; the sample stores fill whenever it is active. The lookups below find a
+    // History by stat id and series name. historyItems is a property that is reassigned as the delegates are
+    // created, so a lookup made before they existed is made again once they do.
+    property var historyItems: []
+    readonly property var historyKinds: {
+        var list = []
+        for (var i = 0; i < M.METRICS.length; ++i)
+            for (var j = 0; j < M.METRICS[i].series.length; ++j)
+                list.push({ id: M.METRICS[i].id, series: M.METRICS[i].series[j] })
+        return list
+    }
+    // Where each series' values come from: "<id>.<series>" -> an object with a `value` (the sensor items).
+    readonly property var historySensors: ({
+        "cpu.value": cpuUsage, "ram.value": memPercent, "temp.value": tempAvg, "freq.value": freqAvg,
+        "net.down": netDown, "net.up": netUp, "bat.percent": batSensor, "fan.value": fanSensor
+    })
+    Repeater {
+        id: historyRepeater
+        model: root.historyKinds
+        delegate: History {
+            required property var modelData
+            statId: modelData.id
+            series: modelData.series
+            sensor: root.historySensors[modelData.id + "." + modelData.series]
+            wanted: root.historyWanted(modelData.id)
+        }
+        onItemAdded: root.historyItems = historyList()
+        function historyList() {
+            var list = []
+            for (var i = 0; i < count; ++i) { var it = itemAt(i); if (it) list.push(it) }
+            return list
+        }
+    }
+    // A history is collected while a graph that shows the stat is enabled: the panel graph while the stat is shown
+    // in the panel, the popup graph while its popup row is on. All series of a stat share the condition.
+    function historyWanted(id) {
+        return (statGraph(id) && statShown(id)) || (statPopupGraph(id) && statPopupOn(id))
+    }
+    function historyOf(id, series) {
+        for (var i = 0; i < historyItems.length; ++i)
+            if (historyItems[i].statId === id && historyItems[i].series === series) return historyItems[i]
+        return null
+    }
+    // The bar graphs' sample store belonging to one of the history sources.
     function sampleStoreOf(source) {
         if (!source) return null
-        var all = [cpuHistory, ramHistory, tempHistory, freqHistory, netDownHistory, netUpHistory, fanHistory, batHistory]
-        for (var i = 0; i < all.length; ++i) {
-            if (all[i].historySource === source) return all[i].sampleStore
-        }
+        for (var i = 0; i < historyItems.length; ++i)
+            if (historyItems[i].historySource === source) return historyItems[i].sampleStore
         return null
     }
 
@@ -595,10 +627,13 @@ PlasmoidItem {
         if (batState === 0 || !isNum(ms) || Number(ms) <= 0) return ""
         return hoursText(Number(ms) / 3600000)
     }
-    // Each temperature is highlighted by its own value, so the colour always
-    // matches the number shown next to it.
-    readonly property bool avgHot: isNum(tempAvg.value) && tempAvg.value >= warnTempC
-    readonly property bool tempHot: isNum(tempMax.value) && tempMax.value >= warnTempC
+    // The settings the registry's alerts and scales read (Metrics.js is a pure library). Every binding that
+    // evaluates an alert or a scale reads this property, so it re-evaluates when the warning temperature changes.
+    // (A peak step also needs barChart and graph flags; stepPeak() reads them when it runs.)
+    readonly property var limitCtx: ({ warnTempC: warnTempC })
+    // The popup's "max core" temperature is highlighted by its own value (the registry's row alert), so the
+    // colour always matches the number shown next to it.
+    readonly property bool tempHot: M.byId("temp").popup.rows[1].alert({ max: tempMax.value }, limitCtx)
 
     // Every shown stat, in the user's order, as the panel writes it (also the ones hidden by the maximum length).
     function tooltipText() {
@@ -652,29 +687,21 @@ PlasmoidItem {
         }
         return false
     }
+    // The graph flags of a stat are the registry's config keys (gp: panel graph, gd: popup graph), read from the
+    // configuration by name: a binding that calls these still re-evaluates when the setting changes.
     function statGraph(id) {
-        switch (id) {
-        case "cpu":  return gpCpu
-        case "ram":  return gpRam
-        case "temp": return gpTemp
-        case "freq": return gpFreq
-        case "net":  return gpNet
-        case "bat":  return gpBat
-        case "fan":  return gpFan
-        }
-        return false
+        var m = M.byId(id)
+        return !!m && !!Plasmoid.configuration[m.keys.gp]
     }
     function statPopupGraph(id) {
-        switch (id) {
-        case "cpu":  return gdCpu
-        case "ram":  return gdRam
-        case "temp": return gdTemp
-        case "freq": return gdFreq
-        case "net":  return gdNet
-        case "bat":  return gdBat
-        case "fan":  return gdFan
-        }
-        return false
+        var m = M.byId(id)
+        return !!m && !!Plasmoid.configuration[m.keys.gd]
+    }
+    // Whether the stat's row is on in the popup (its popup flag, and the battery / fan exists).
+    function statPopupOn(id) {
+        var m = M.byId(id)
+        if (!m || !Plasmoid.configuration[m.keys.popup]) return false
+        return id === "bat" ? hasBattery : (id === "fan" ? hasFan : true)
     }
     function shownIds() {
         var ids = []
@@ -749,31 +776,33 @@ PlasmoidItem {
     }
 
     // Per-stat colours, history and graph scale, so a panel cell needs nothing but its id.
-    function statAlert(id) { return (id === "temp" && avgHot) || (id === "bat" && batLow) }
+    // Whether a stat is in its alert state (the registry's `alert`: temperature at or above the warning, battery
+    // low). A stat without an alert reads none of its values, so its colour bindings do not follow its sensor.
+    function statAlert(id) {
+        var m = M.byId(id)
+        if (!m || !m.alert) return false
+        return M.alertOf(m, statVals(id), limitCtx)
+    }
     function statTextColor(id) { return statAlert(id) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor }
     function statLineColor(id) { return statAlert(id) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor }
+    // The history of a stat's first series (and of its second, e.g. upload): null while no graph needs it.
     function statHistory(id) {
-        switch (id) {
-        case "cpu":  return cpuHist
-        case "ram":  return ramHist
-        case "temp": return tempHist
-        case "freq": return freqHist
-        case "net":  return netDownHist
-        case "bat":  return batHist
-        case "fan":  return fanHist
-        }
-        return null
+        var m = M.byId(id), h = m ? historyOf(id, m.series[0]) : null
+        return h ? h.historySource : null
     }
-    function statHistory2(id) { return id === "net" ? netUpHist : null }
-    function statYFrom(id) { return id === "temp" ? tempYMin : 0 }
+    function statHistory2(id) {
+        var m = M.byId(id), h = m && m.series.length > 1 ? historyOf(id, m.series[1]) : null
+        return h ? h.historySource : null
+    }
+    // The graph scale of a stat (registry `scale`): fixed, computed from the warning temperature, or the peak kept above.
+    function statYFrom(id) {
+        var m = M.byId(id)
+        return m ? M.scaleFrom(m) : 0
+    }
     function statYTo(id) {
-        switch (id) {
-        case "temp": return tempYMax
-        case "freq": return freqPeak
-        case "net":  return netPeak
-        case "fan":  return fanPeak
-        }
-        return 100
+        var m = M.byId(id)
+        if (!m) return 100
+        return M.scaleEnd(m, limitCtx, M.followsData(m) ? peakOf(id) : 0)
     }
 
     // ---- panel text ----
