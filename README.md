@@ -64,7 +64,7 @@ cd plasma-glance
 If you were given a `.plasmoid` file (or built one with `./package.sh`, see below):
 
 ```
-kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.8.plasmoid
+kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.8.1.plasmoid
 ```
 
 Use `-u` instead of `-i` to upgrade an installed copy. You can also do it from Plasma: right-click the
@@ -73,7 +73,7 @@ panel, choose **Add Widgets**, then **Get New Widgets > Install from Local File*
 To install it for every user on the machine, add `-g` and run the command as root:
 
 ```
-sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.8.plasmoid
+sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.8.1.plasmoid
 ```
 
 ### Then load it into Plasma
@@ -276,6 +276,11 @@ package.sh                      builds the .plasmoid into dist/
 ```
 
 ## Changelog
+
+**0.8.1**
+- The saved battery count is now refreshed from the first battery reading after the widget loads. A
+  configuration copied from a laptop to a machine without a battery no longer keeps showing the Battery row
+  and the "Popup battery view" option in the Metrics tab.
 
 **0.8**
 - CPU frequency is always shown in GHz (`0.8 GHz`), so it no longer spills out of its reserved width when

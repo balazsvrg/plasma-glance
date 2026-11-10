@@ -256,9 +256,8 @@ same steps:
    `$XDG_DATA_HOME/plasma/plasmoids/<id>` already exists (`${XDG_DATA_HOME:-$HOME/.local/share}`).
 7. **Reload Plasma** so the new version loads: `kquitapp6 plasmashell; kstart plasmashell`. This blanks
    the desktop for a second or two; open applications are unaffected. Ask before doing it.
-8. **Tag** if you use tags: `git tag -a v0.9 -m "v0.9: ..."`. Annotated tags `v0.2` to `v0.6` exist;
-   `v0.7` and `v0.8` were released but have no tag in this clone, so tagging is optional and the
-   history is inconsistent. Decide and be consistent.
+8. **Tag** the release commit: `git tag -a v0.9 -m "v0.9: ..."`. Every release from `v0.2` on has an
+   annotated tag (`v0.7` and `v0.8` were added afterwards, on their release commits).
 
 Before sharing a package with anyone else, set a real author in `metadata.json` (it says "Local") and
 check the license field. `dist/` is ignored by git; do not commit packages.
