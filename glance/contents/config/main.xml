@@ -60,6 +60,10 @@
             <min>0</min>
             <max>3</max>
         </entry>
+        <entry name="lengthTextShort" type="Bool">
+            <label>Written by the widget: the maximum length currently shortens the panel text (never on a vertical panel)</label>
+            <default>false</default>
+        </entry>
         <entry name="lengthDropped" type="String">
             <label>Written by the widget: comma-separated stats hidden by the maximum length</label>
             <default></default>

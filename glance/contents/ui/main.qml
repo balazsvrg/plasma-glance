@@ -603,6 +603,7 @@ PlasmoidItem {
     // Widest line of a stat's text on a vertical panel (what must fit in the panel's thickness): the
     // worst-case lines of verticalLines, so the width and the text come from the same code.
     function verticalWidth(id) {
+        void fm.height                       // re-measure when the font changes (advanceWidth is not bindable)
         var lines = verticalLines(id, false, true), w = 0
         for (var i = 0; i < lines.length; ++i) w = Math.max(w, fm.advanceWidth(lines[i]))
         if (id === "fan") w = Math.max(w, Kirigami.Units.iconSizes.smallMedium)
@@ -610,13 +611,11 @@ PlasmoidItem {
     }
     // The panel's thickness (set by the vertical compact view); 0 until known or when horizontal.
     property real panelThickness: 0
-    // On a vertical panel the full value text is wider than the panel for some visible stat. Only the
-    // value text is shortened then: its height does not change, so this never touches the length steps.
-    readonly property bool thicknessCompact: {
-        if (!vertical || panelThickness <= 0) return false
-        for (var i = 0; i < visibleIds.length; ++i)
-            if (verticalWidth(visibleIds[i]) > panelThickness - Kirigami.Units.smallSpacing * 2) return true
-        return false
+    // Whether a stat's value text is shortened. Horizontal: the length step. Vertical: only this stat's own
+    // full text being wider than the panel (shortening saves no length there, so it is not a length step).
+    function statCompact(id) {
+        if (!vertical) return lengthLevel >= 2
+        return panelThickness > 0 && verticalWidth(id) > panelThickness - Kirigami.Units.smallSpacing * 2
     }
 
     function tempShort(v) { return tempNumber(v) + "°" }
@@ -659,37 +658,71 @@ PlasmoidItem {
         return 100
     }
 
+    // The value of a stat and a worst-case sample of it (the widest it can get, for width calculations).
+    function statValue(id, sample) {
+        switch (id) {
+        case "cpu":  return sample ? 100 : cpuUsage.value
+        case "ram":  return sample ? 100 : memPercent.value
+        case "temp": return sample ? 100 : tempAvg.value
+        case "freq": return sample ? 9999 : freqAvg.value
+        case "bat":  return sample ? 100 : batPercent
+        case "fan":  return sample ? 9999 : fanRpm
+        }
+        return 0
+    }
+    // The value part of a stat's text (no caption), shared by the horizontal and the vertical panel.
+    function valueText(id, compact, sample) {
+        var v = statValue(id, sample)
+        switch (id) {
+        case "cpu":
+        case "ram":  return pct(v)
+        case "temp": return compact ? tempShort(v) : temp(v)
+        case "freq": return compact ? freqShort(v) : freq(v)
+        case "bat":  return batValue(v, sample ? 1 : batState, compact)
+        case "fan":  return rpmNumber(v)
+        }
+        return ""
+    }
+    // Net has two values; in bits mode the sample is scaled so it is the widest in either unit.
+    function netLines(sample) {
+        var d = sample ? (netBits ? 999e6 / 8 : 999e6) : netDown.value
+        var u = sample ? d : netUp.value
+        return ["↓" + rateShort(d), "↑" + rateShort(u)]
+    }
     // The text of a stat in the panel, for the current step (compact or full) and orientation.
     // On a vertical panel the caption line is always kept, so it is easy to tell which stat is shown;
     // only the value line is shortened.
     function statText(id, compact, vert) {
         if (vert) return verticalLines(id, compact, false).join("\n")
+        var v = valueText(id, compact, false)
         switch (id) {
-        case "cpu":  return compact ? "C " + pct(cpuUsage.value) : "CPU " + pct(cpuUsage.value)
-        case "ram":  return compact ? "R " + pct(memPercent.value) : "RAM " + pct(memPercent.value)
-        case "temp": return compact ? tempShort(tempAvg.value) : temp(tempAvg.value)
-        case "freq": return compact ? freqShort(freqAvg.value) : freq(freqAvg.value)
-        case "net":  return compact ? "↓" + rateShort(netDown.value) + " ↑" + rateShort(netUp.value) : netText()
-        case "bat":  return compact ? "B " + batValue(batPercent, batState, true) : "BAT " + batValue(batPercent, batState, false)
-        case "fan":  return compact ? rpmNumber(fanRpm) : rpmText(fanRpm)
+        case "cpu":  return (compact ? "C " : "CPU ") + v
+        case "ram":  return (compact ? "R " : "RAM ") + v
+        case "temp":
+        case "freq": return v
+        case "net":  { var n = netLines(false); return compact ? n[0] + " " + n[1] : netText() }
+        case "bat":  return (compact ? "B " : "BAT ") + v
+        case "fan":  return compact ? v : rpmText(fanRpm)
         }
         return ""
     }
-    // The lines of a stat on a vertical panel: caption, then value line(s). `sample` gives the widest
-    // possible values instead of the live ones, for the width calculation.
-    function verticalLines(id, compact, sample) {
+    function verticalCaption(id) {
         switch (id) {
-        case "cpu":  return ["CPU", pct(sample ? 100 : cpuUsage.value)]
-        case "ram":  return ["RAM", pct(sample ? 100 : memPercent.value)]
-        case "temp": { var t = sample ? 100 : tempAvg.value
-                       return ["Temp", compact ? tempShort(t) : temp(t)] }
-        case "freq": return sample ? ["Freq", compact ? freqShort(999) : freq(999), compact ? freqShort(9999) : freq(9999)]
-                                   : ["Freq", compact ? freqShort(freqAvg.value) : freq(freqAvg.value)]
-        case "net":  return ["Net", "↓" + rateShort(sample ? 999e6 : netDown.value), "↑" + rateShort(sample ? 999e6 : netUp.value)]
-        case "bat":  return ["Bat", batValue(sample ? 100 : batPercent, sample ? 1 : batState, compact)]
-        case "fan":  return ["Fan", rpmNumber(sample ? 9999 : fanRpm)]
+        case "cpu":  return "CPU"
+        case "ram":  return "RAM"
+        case "temp": return "Temp"
+        case "freq": return "Freq"
+        case "net":  return "Net"
+        case "bat":  return "Bat"
+        case "fan":  return "Fan"
         }
-        return []
+        return ""
+    }
+    // The lines of a stat on a vertical panel: caption, then the value line(s). `sample` gives the widest
+    // possible values instead of the live ones.
+    function verticalLines(id, compact, sample) {
+        var cap = verticalCaption(id)
+        return id === "net" ? [cap].concat(netLines(sample)) : [cap, valueText(id, compact, sample)]
     }
 
     // Space one stat takes at a given step (width when horizontal, height when vertical).
@@ -708,8 +741,7 @@ PlasmoidItem {
             if (inlineGraph) w += gap + inlineGraphWidth
             return w
         }
-        var lines = (id === "net" ? 2 : 1) + 1                          // value lines + caption line (always kept)
-        var h = lines * mLine.height
+        var h = verticalLines(id, false, true).length * mLine.height    // caption + value line(s)
         if (id === "fan") h += Kirigami.Units.iconSizes.smallMedium
         if (inlineGraph) h += Kirigami.Units.gridUnit
         return h
@@ -732,11 +764,15 @@ PlasmoidItem {
         // 1 px in every test, however many stats), so the strip stays at or under the limit.
         return Math.ceil(total + (n - 1) * (1 + 2 * gap)) + 1
     }
+    // The steps the strip can take, longest first. Step 2 (compact text) saves no length on a vertical panel,
+    // so it is skipped there.
+    function levelList() { return vertical ? [0, 1, 3] : [0, 1, 2, 3] }
     function computeFit() {
         var ids = shownIds()
         if (maxLength <= 0 || ids.length === 0) return { level: 0, drop: 0 }
-        for (var level = 0; level <= 3; ++level)
-            if (stripLength(level, 0) <= maxLength) return { level: level, drop: 0 }
+        var levels = levelList()
+        for (var k = 0; k < levels.length; ++k)
+            if (stripLength(levels[k], 0) <= maxLength) return { level: levels[k], drop: 0 }
         for (var drop = 1; drop < ids.length; ++drop)
             if (stripLength(3, drop) <= maxLength) return { level: 3, drop: drop }
         return { level: 3, drop: ids.length - 1 }                         // only the first stat is left
@@ -745,8 +781,6 @@ PlasmoidItem {
     // otherwise it follows the saved limit.
     readonly property var fit: dragging ? dragFit() : computeFit()
     readonly property int lengthLevel: fit.level
-    // Vertical: text is shortened only when it does not fit across the panel (that saves no length).
-    readonly property bool textCompact: vertical ? thicknessCompact : lengthLevel >= 2
     // The shown stats split into those that fit and those dropped from the end to fit.
     readonly property var visibleIds: { var ids = shownIds(); return ids.slice(0, ids.length - fit.drop) }
     readonly property var droppedIds: { var ids = shownIds(); return ids.slice(ids.length - fit.drop) }
@@ -773,7 +807,8 @@ PlasmoidItem {
     function configs() {
         var list = []
         var n = shownIds().length
-        for (var level = 0; level <= 3; ++level) list.push({ level: level, drop: 0, len: stripLength(level, 0) })
+        var levels = levelList()
+        for (var k = 0; k < levels.length; ++k) list.push({ level: levels[k], drop: 0, len: stripLength(levels[k], 0) })
         for (var drop = 1; drop < n; ++drop) list.push({ level: 3, drop: drop, len: stripLength(3, drop) })
         return list
     }
@@ -855,13 +890,15 @@ PlasmoidItem {
         for (var i = 0; i < keep; ++i) if (statGraph(ids[i])) graphVisible = true
         var inlineOff = graphInline && !inlineGraphsAt(fit.level) && graphVisible
         var dropped = ids.slice(keep).join(",")
-        setCfg("lengthLevel", vertical ? Math.min(fit.level, 1) : fit.level)
+        setCfg("lengthLevel", fit.level)
+        setCfg("lengthTextShort", !vertical && fit.level >= 2)
         setCfg("lengthDropped", dropped)
         setCfg("lengthInlineOff", inlineOff)
     }
     // Run after the current round of binding updates has settled.
     onFitChanged: Qt.callLater(syncLengthInfo)
     onDraggingChanged: Qt.callLater(syncLengthInfo)
+    onVerticalChanged: Qt.callLater(syncLengthInfo)
     Component.onCompleted: Qt.callLater(syncLengthInfo)
 
     function cellShown(id) { return visibleIds.indexOf(id) >= 0 }
@@ -968,13 +1005,13 @@ PlasmoidItem {
                 }
                 PlasmaComponents.Label {
                     Layout.alignment: Qt.AlignCenter
-                    Layout.minimumWidth: compact.vertical ? 0 : root.reservedWidth(cell.statId, root.textCompact)
-                    Layout.preferredWidth: compact.vertical ? -1 : root.reservedWidth(cell.statId, root.textCompact)
+                    Layout.minimumWidth: compact.vertical ? 0 : root.reservedWidth(cell.statId, root.statCompact(cell.statId))
+                    Layout.preferredWidth: compact.vertical ? -1 : root.reservedWidth(cell.statId, root.statCompact(cell.statId))
                     Layout.fillWidth: compact.vertical
                     horizontalAlignment: Text.AlignHCenter
                     fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
                     minimumPixelSize: 8
-                    text: root.statText(cell.statId, root.textCompact, compact.vertical)
+                    text: root.statText(cell.statId, root.statCompact(cell.statId), compact.vertical)
                     color: cell.textColor
                 }
                 Spark {
