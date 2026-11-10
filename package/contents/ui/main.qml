@@ -311,9 +311,14 @@ PlasmoidItem {
         property real yTo: 100
         property color lineColor: Kirigami.Theme.highlightColor
         property color lineColor2: Kirigami.Theme.positiveTextColor
+        // On a light theme the lines (and their fill, which uses the line colour) are drawn a little
+        // darker so they keep their contrast. The check follows the theme live.
+        property real lightFactor: 1.3
+        readonly property bool lightTheme: Kirigami.Theme.backgroundColor.hslLightness > 0.5
+        function shade(c) { return lightTheme ? Qt.darker(c, lightFactor) : c }
 
         valueSources: history ? (history2 ? [history, history2] : [history]) : []
-        colorSource: Charts.ArraySource { array: [spark.lineColor, spark.lineColor2] }
+        colorSource: Charts.ArraySource { array: [spark.shade(spark.lineColor), spark.shade(spark.lineColor2)] }
         xRange { automatic: true }            // spans the samples collected so far
         yRange { from: spark.yFrom; to: spark.yTo; automatic: false }
         direction: Charts.XYChart.ZeroAtEnd   // newest sample on the right

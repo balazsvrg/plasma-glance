@@ -406,6 +406,11 @@ samples collected so far, then scrolls), `yRange` is `yFrom..yTo` (not automatic
 `MetricCell` (opacity 0.5), the inline one in `MetricCell`, and `PopupGraph` (which adds `statId`, a `wanted`
 extra condition used by the temperature graph so it needs its row, and its own `on`/`visible`).
 
+Light themes: `Spark` has `lightTheme` (`Kirigami.Theme.backgroundColor.hslLightness > 0.5`, read from the
+theme the graph is drawn on, so it is a live binding) and `lightFactor` (1.3). The chart's `colorSource` is
+`shade(lineColor)` and `shade(lineColor2)`, where `shade` returns `Qt.darker(c, lightFactor)` on a light theme
+and `c` unchanged otherwise. The fill uses the line colour, so it follows. Dark themes are unaffected.
+
 ### Scales (`statYFrom`, `statYTo`)
 
 - temperature: `tempYMin` 20 to `tempYMax = max(100, warnTempC + 10)`

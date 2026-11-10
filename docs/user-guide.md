@@ -128,7 +128,8 @@ Normally text uses your theme's text colour. Two things turn red (your theme's "
 | Battery is below 15% and not charging | The battery text in the strip and in the popup's battery row. The 15% level is fixed (not configurable). |
 
 Graph lines follow the same colour: a graph for temperature or battery turns red while that
-stat is in alert. Otherwise graph lines use your theme's highlight colour.
+stat is in alert. Otherwise graph lines use your theme's highlight colour. On a light colour
+scheme the lines are drawn slightly darker so they stay readable against the light background.
 
 ---
 
