@@ -19,7 +19,7 @@ For contributors to Glance, the KDE Plasma 6 panel widget. The user-facing docum
   not by eye), but it is optional.
 
 There is no `qmllint` on the reference machine, so there is no linter to install or run. See
-"No automated tests, no linter" below.
+"No widget tests, no linter" below.
 
 ## Repository layout
 
@@ -196,14 +196,14 @@ way.
 
 ## Tests
 
-The widget itself still has no automated tests (see below), but the metrics registry
+The widget itself has no automated tests (see below), but the metrics registry
 (`package/contents/ui/Metrics.js`) has a test that runs without Plasma:
 
 ```
 python3 tests/metrics_test.py
 ```
 
-It needs `python3` with PySide6; its `QJSEngine` is Qt's own JavaScript engine, the one QML uses. The script
+It needs `python3` with PySide6, a development-only dependency (the widget itself needs neither Python nor PySide6); PySide6's `QJSEngine` is Qt's own JavaScript engine, the one QML uses. The script
 prints one line per failure, a summary, and exits non-zero if anything failed. It checks:
 
 - every panel text the registry renders (full, compact, vertical lines, vertical compact, both temperature
@@ -222,9 +222,9 @@ Checking widths with real font metrics needs the widget: a temporary copy of `pa
 prints `fm.advanceWidth(...)` of the registry text next to the existing `m*` widths, run in `plasmawindowed`
 as described under "Testing without touching the real install". Do not commit such an overlay.
 
-## No automated tests, no linter
+## No widget tests, no linter
 
-There is no automated test suite and no `qmllint` here. Consequences:
+There is no automated test suite for the widget itself (only the registry test above) and no `qmllint` here. Consequences:
 
 - Verification is manual and visual: the smoke test, harness overlays, and comparison with system tools.
   Report what you actually saw (and say what you could not check), not what you expect.
