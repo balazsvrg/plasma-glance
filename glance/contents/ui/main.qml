@@ -585,6 +585,11 @@ PlasmoidItem {
     TextMetrics { id: mBatC;  font: Kirigami.Theme.defaultFont; text: "B 100%↓" }
     TextMetrics { id: mFan;   font: Kirigami.Theme.defaultFont; text: "9999 RPM" }
     TextMetrics { id: mFanC;  font: Kirigami.Theme.defaultFont; text: "9999" }
+    // Widest line of a vertical cell (caption and value are on separate lines there).
+    TextMetrics { id: mPctV;  font: Kirigami.Theme.defaultFont; text: "100%" }
+    TextMetrics { id: mMHzV;  font: Kirigami.Theme.defaultFont; text: "1200 MHz" }
+    TextMetrics { id: mNetV;  font: Kirigami.Theme.defaultFont; text: "↓999M" }
+    TextMetrics { id: mBatV;  font: Kirigami.Theme.defaultFont; text: "100% ↓" }
     TextMetrics { id: mLine;  font: Kirigami.Theme.defaultFont; text: "Ag" }       // one line of text
 
     function reservedWidth(id, compact) {
@@ -597,6 +602,30 @@ PlasmoidItem {
         case "bat":  return compact ? mBatC.width  : mBat.width
         case "fan":  return compact ? mFanC.width  : mFan.width
         }
+        return 0
+    }
+
+    // Widest line of a stat's text on a vertical panel (what must fit in the panel's thickness).
+    function verticalWidth(id, compact) {
+        switch (id) {
+        case "cpu":  return compact ? mCpuC.width : mPctV.width
+        case "ram":  return compact ? mRamC.width : mPctV.width
+        case "temp": return compact ? mTempC.width : mTemp.width
+        case "freq": return compact ? mFreqC.width : Math.max(mFreq.width, mMHzV.width)
+        case "net":  return mNetV.width
+        case "bat":  return compact ? mBatC.width : mBatV.width
+        case "fan":  return Math.max(mFanC.width, Kirigami.Units.iconSizes.smallMedium)
+        }
+        return 0
+    }
+    // The panel's thickness (set by the vertical compact view); 0 until known or when horizontal.
+    property real panelThickness: 0
+    // Full text does not fit across a vertical panel: start at the compact text step.
+    readonly property int thicknessLevel: {
+        if (!vertical || panelThickness <= 0) return 0
+        var ids = shownIds()
+        for (var i = 0; i < ids.length; ++i)
+            if (verticalWidth(ids[i], false) > panelThickness - Kirigami.Units.smallSpacing * 2) return 2
         return 0
     }
 
@@ -700,8 +729,8 @@ PlasmoidItem {
     }
     function computeFit() {
         var ids = shownIds()
-        if (maxLength <= 0 || ids.length === 0) return { level: 0, drop: 0 }
-        for (var level = 0; level <= 3; ++level)
+        if (maxLength <= 0 || ids.length === 0) return { level: thicknessLevel, drop: 0 }
+        for (var level = thicknessLevel; level <= 3; ++level)
             if (stripLength(level, 0) <= maxLength) return { level: level, drop: 0 }
         for (var drop = 1; drop < ids.length; ++drop)
             if (stripLength(3, drop) <= maxLength) return { level: 3, drop: drop }
@@ -738,7 +767,7 @@ PlasmoidItem {
     function configs() {
         var list = []
         var n = shownIds().length
-        for (var level = 0; level <= 3; ++level) list.push({ level: level, drop: 0, len: stripLength(level, 0) })
+        for (var level = thicknessLevel; level <= 3; ++level) list.push({ level: level, drop: 0, len: stripLength(level, 0) })
         for (var drop = 1; drop < n; ++drop) list.push({ level: 3, drop: drop, len: stripLength(3, drop) })
         return list
     }
@@ -781,7 +810,7 @@ PlasmoidItem {
     // The limit that would be saved right now: what is on screen, never shorter than the shown layout.
     function dragMax() {
         var v = Math.max(snapLimit(), dragLayout().len)
-        return v >= stripLength(0, 0) ? 0 : v
+        return v >= stripLength(thicknessLevel, 0) ? 0 : v
     }
     function finishDrag() {
         if (!dragging) return
@@ -842,6 +871,7 @@ PlasmoidItem {
         onClicked: root.expanded = !root.expanded
 
         readonly property bool vertical: root.vertical
+        Binding { target: root; property: "panelThickness"; value: compact.vertical ? compact.width : 0 }
 
         // Decide which edge gets the drag handle from where this widget sits in the panel.
         function updateHandleSide() {
