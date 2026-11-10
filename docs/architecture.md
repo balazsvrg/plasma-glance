@@ -411,16 +411,19 @@ Bar: a `Charts.BarChart` (an `XYChart`, so the same fixed `yRange`, `ZeroAtEnd` 
 has no bucketing of its own and `HistoryProxySource` does not expose its samples to QML, so:
 
 - Each `History` also owns a small sample store (`samples`: the last `2 * historyLen` values, a running
-  `count` and a `revision`). It is filled from the proxy's `dataChanged` (one per history tick) while
-  `root.barChart` is true and cleared when bars are turned off. `root.sampleStoreOf(source)` maps a
-  history source to its store, so `Spark` keeps the same `history`/`history2` interface.
+  `count` and a `revision`). It is filled from the proxy's `dataChanged` (one per history tick) for as long
+  as the `History` loader is active, in both chart styles, so a style change never loses history. It is
+  never cleared; it is destroyed with the loader (graph turned off). `root.sampleStoreOf(source)` maps a
+  history source to its store, so `Spark` keeps the same `history`/`history2` interface. The two net
+  stores can start at different ticks, so `bucketMean` shifts the upload store by the difference of the
+  two counts to line the series up by time.
 - `Spark` merges samples into buckets: `barCount = floor(width / 3)` (2 px bar + 1 px gap at least),
   `bucketSize = ceil(historyLen / barCount)`, `slotCount = ceil(historyLen / bucketSize)` and
   `slotPx = floor(width / slotCount)`. Buckets are counted from the first sample, so only the newest
   one changes between ticks. `rebuild()` (scheduled with `Qt.callLater`) writes the mean of each bucket
   into a `ListModel` (row 0 = newest, which `ZeroAtEnd` draws at the right edge) read by two
   `Charts.ModelSource`s (roles `a` for the first series, `b` for the second). It reruns when the store
-  changes, the width changes or the history length changes.
+  changes, the chart style changes to bar, the width changes or the history length changes.
 - The chart is `slotCount * slotPx` wide, anchored to the right, with `xRange` fixed to `0..slotCount`
   so a bar keeps its width while the history is still filling, `spacing: 1` and
   `barWidth: slotPx - 1`. Bar edges can be anti-aliased by about half a pixel.

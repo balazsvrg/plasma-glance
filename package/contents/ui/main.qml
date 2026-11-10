@@ -286,14 +286,14 @@ PlasmoidItem {
                 fillMode: Charts.HistoryProxySource.DoNotFill
             }
             // The chart source keeps its samples to itself, so bar graphs get their own copy of the
-            // recent values (one per history tick, only while bars are shown).
+            // recent values (one per history tick). It fills in both chart styles, so switching style
+            // keeps the whole history, and it lives and dies with this loader.
             readonly property var store: samples
             QtObject {
                 id: samples
                 property var values: []          // the most recent samples, oldest first
                 property int count: 0            // samples seen since the store started
                 property int revision: 0         // changes whenever a sample is added
-                function reset() { values = []; count = 0; revision++ }
                 function add(v) {
                     values.push(v)
                     if (values.length > 2 * root.historyLen) values.splice(0, values.length - 2 * root.historyLen)
@@ -302,12 +302,8 @@ PlasmoidItem {
                 }
             }
             Connections {
-                target: root.barChart ? h : null
+                target: h
                 function onDataChanged() { if (root.isNum(hist.sensor.value)) samples.add(Number(hist.sensor.value)) }
-            }
-            Connections {
-                target: root
-                function onBarChartChanged() { if (!root.barChart) samples.reset() }
             }
         }
     }
@@ -367,12 +363,13 @@ PlasmoidItem {
         readonly property var store: root.sampleStoreOf(history)
         readonly property var store2: root.sampleStoreOf(history2)
 
-        // The mean of the samples of bucket `id` (0 when the bucket has none).
-        function bucketMean(s, id) {
+        // The mean of the samples of bucket `id` (0 when the bucket has none). `shift` is how many samples
+        // later than the main store this one started, so both series line up by time.
+        function bucketMean(s, id, shift) {
             if (!s) return 0
             var first = s.count - s.values.length
-            var lo = Math.max(id * bucketSize, first)
-            var hi = Math.min(id * bucketSize + bucketSize - 1, s.count - 1)
+            var lo = Math.max(id * bucketSize - shift, first)
+            var hi = Math.min(id * bucketSize + bucketSize - 1 - shift, s.count - 1)
             if (hi < lo) return 0
             var sum = 0
             for (var a = lo; a <= hi; ++a) sum += s.values[a - first]
@@ -385,7 +382,7 @@ PlasmoidItem {
             var rows = 0
             for (var j = 0; j < slotCount && newest - j >= 0; ++j) {
                 if (store.count - store.values.length > (newest - j + 1) * bucketSize - 1) break   // no samples left for this bar
-                var row = { a: bucketMean(store, newest - j), b: store2 ? bucketMean(store2, newest - j) : 0 }
+                var row = { a: bucketMean(store, newest - j, 0), b: store2 ? bucketMean(store2, newest - j, store.count - store2.count) : 0 }
                 if (rows < barModel.count) barModel.set(rows, row)
                 else barModel.append(row)
                 ++rows
@@ -393,11 +390,12 @@ PlasmoidItem {
             if (rows === 0) { rows = 1; barModel.set(0, { a: 0, b: 0 }) }      // keep one row so the model has its roles
             if (barModel.count > rows) barModel.remove(rows, barModel.count - rows)
         }
-        function scheduleRebuild() { Qt.callLater(rebuild) }
+        function scheduleRebuild() { if (root.barChart) Qt.callLater(rebuild) }   // line mode keeps no bar model
         onSlotCountChanged: scheduleRebuild()
         onBucketSizeChanged: scheduleRebuild()
         onStoreChanged: scheduleRebuild()
         Component.onCompleted: scheduleRebuild()
+        Connections { target: root; function onBarChartChanged() { spark.scheduleRebuild() } }
         Connections { target: spark.store; function onRevisionChanged() { spark.scheduleRebuild() } }
         Connections { target: spark.store2; function onRevisionChanged() { spark.scheduleRebuild() } }
         ListModel { id: barModel; ListElement { a: 0; b: 0 } }

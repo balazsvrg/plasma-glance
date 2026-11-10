@@ -160,9 +160,8 @@ alert colour) and the newest-sample-on-the-right layout are the same in both sty
 In **Bar** mode neighbouring samples are merged so that every bar stays at least 2 px wide with a
 1 px gap, and a bar shows the mean of the samples it covers. A wide popup graph therefore shows more
 (and wider) bars than a small panel one. The network graph stacks its bars: download at the bottom,
-upload on top in its own colour, so the scale covers the sum of the two. Bars are collected from the
-moment Bar is chosen, so after switching from Line a graph starts empty and fills over the history
-length.
+upload on top in its own colour, so the scale covers the sum of the two. Both styles draw the same
+collected history, so switching between Line and Bar (either way) keeps everything gathered so far.
 
 ### Scales
 
