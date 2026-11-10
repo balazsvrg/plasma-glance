@@ -43,15 +43,17 @@ PlasmoidItem {
     readonly property int panelGraphStyle: Plasmoid.configuration.panelGraphStyle
     readonly property bool popupGraphs: Plasmoid.configuration.popupGraphs
     readonly property bool panelGraphs: panelGraphStyle !== styleOff
-    readonly property int historyLen: Math.max(2, Math.round(Plasmoid.configuration.historySeconds * 1000 / refreshMs))
-    readonly property real tempYMax: Math.max(100, warnTempC + 10)   // temperature graph scale: 20 .. tempYMax
+    readonly property int historySeconds: Math.min(300, Math.max(30, Plasmoid.configuration.historySeconds))
+    readonly property int historyLen: Math.max(2, Math.round(historySeconds * 1000 / refreshMs))
+    readonly property real tempYMin: 20                               // temperature graph scale: tempYMin .. tempYMax
+    readonly property real tempYMax: Math.max(100, warnTempC + 10)
 
     component History: Loader {
         id: hist
         property var sensor
         property bool wanted: false
         property bool ready: false          // latched once the sensor has reported a number
-        readonly property var source: item ? item.history : null
+        readonly property var historySource: item ? item.history : null
         readonly property bool numeric: root.isNum(sensor.value)
 
         onNumericChanged: if (numeric) ready = true
@@ -74,9 +76,9 @@ PlasmoidItem {
     History { id: ramHistory;  sensor: memPercent; wanted: (root.panelGraphs && root.showRam)  || (root.popupGraphs && root.popupMemory) }
     History { id: tempHistory; sensor: tempAvg;   wanted: (root.panelGraphs && root.showTemp) || (root.popupGraphs && root.popupTempAvg) }
 
-    readonly property var cpuHist:  cpuHistory.source
-    readonly property var ramHist:  ramHistory.source
-    readonly property var tempHist: tempHistory.source
+    readonly property var cpuHist:  cpuHistory.historySource
+    readonly property var ramHist:  ramHistory.historySource
+    readonly property var tempHist: tempHistory.historySource
 
     // One small line graph; used by the popup and (next) the panel.
     component Spark: Charts.LineChart {
@@ -261,7 +263,7 @@ PlasmoidItem {
                 minLabelWidth: tempMetrics.width
                 textColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                 history: root.tempHist
-                yFrom: 20
+                yFrom: root.tempYMin
                 yTo: root.tempYMax
                 lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
             }
@@ -319,7 +321,7 @@ PlasmoidItem {
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
             history: (root.popupGraphs && root.popupTempAvg) ? root.tempHist : null
-            yFrom: 20
+            yFrom: root.tempYMin
             yTo: root.tempYMax
             lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
         }

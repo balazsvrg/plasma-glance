@@ -55,7 +55,7 @@ KCM.SimpleKCM {
 
         QQC2.SpinBox {
             id: warnTemp
-            Kirigami.FormData.label: i18n("Warn above (°C):")
+            Kirigami.FormData.label: i18n("Warn at or above (°C):")
             from: 30
             to: 120
             stepSize: 5

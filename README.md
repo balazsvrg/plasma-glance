@@ -61,8 +61,8 @@ and per-core temperatures. Turning off the per-core list also stops its sensors.
 | Show a graph under each enabled popup item | off |
 | History length: 30 s / 1 min / 5 min | 1 min |
 
-Graph history is collected only while a graph is turned on, and starts once all three
-sensors report real values. The graphs span the samples collected so far and then scroll.
+Graph history is collected only for stats that a graph shows, and starts once that stat's
+sensor reports a real value, so a missing sensor never blocks the other graphs. The graphs span the samples collected so far and then scroll.
 On a vertical panel, "inline" puts the graph below the text.
 
 ## Develop
