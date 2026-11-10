@@ -39,6 +39,9 @@ PlasmoidItem {
     readonly property int panelGraphStyle: Plasmoid.configuration.panelGraphStyle // 0 off, 1 behind, 2 inline
     readonly property bool popupGraphs: Plasmoid.configuration.popupGraphs
     readonly property bool graphsActive: panelGraphStyle > 0 || popupGraphs
+    // Start recording only once all three sensors report real values, so the
+    // history does not begin with fake zeros.
+    readonly property bool sensorsReady: isNum(cpuUsage.value) && isNum(memPercent.value) && isNum(tempAvg.value)
     readonly property int historyLen: Math.max(10, Math.round(Plasmoid.configuration.historySeconds * 1000 / refreshMs))
     readonly property var cpuHist:  histories.item ? histories.item.cpu  : null
     readonly property var ramHist:  histories.item ? histories.item.ram  : null
@@ -46,7 +49,7 @@ PlasmoidItem {
 
     Loader {
         id: histories
-        active: root.graphsActive
+        active: root.graphsActive && root.sensorsReady
         sourceComponent: Item {
             property alias cpu: cpuH
             property alias ram: ramH
@@ -57,21 +60,21 @@ PlasmoidItem {
                 source: Charts.SingleValueSource { value: cpuUsage.value }
                 maximumHistory: root.historyLen
                 interval: root.refreshMs
-                fillMode: Charts.HistoryProxySource.FillFromStart
+                fillMode: Charts.HistoryProxySource.DoNotFill
             }
             Charts.HistoryProxySource {
                 id: ramH
                 source: Charts.SingleValueSource { value: memPercent.value }
                 maximumHistory: root.historyLen
                 interval: root.refreshMs
-                fillMode: Charts.HistoryProxySource.FillFromStart
+                fillMode: Charts.HistoryProxySource.DoNotFill
             }
             Charts.HistoryProxySource {
                 id: tempH
                 source: Charts.SingleValueSource { value: tempAvg.value }
                 maximumHistory: root.historyLen
                 interval: root.refreshMs
-                fillMode: Charts.HistoryProxySource.FillFromStart
+                fillMode: Charts.HistoryProxySource.DoNotFill
             }
         }
     }
@@ -86,7 +89,7 @@ PlasmoidItem {
 
         valueSources: history ? [history] : []
         colorSource: Charts.SingleValueSource { value: spark.lineColor }
-        xRange { from: 0; to: root.historyLen - 1; automatic: false }
+        xRange { automatic: true }            // spans the samples collected so far
         yRange { from: spark.yFrom; to: spark.yTo; automatic: false }
         direction: Charts.XYChart.ZeroAtEnd   // newest sample on the right
         lineWidth: 1.5
@@ -154,6 +157,70 @@ PlasmoidItem {
             Layout.preferredHeight: compact.vertical ? 1 : -1
         }
 
+        // One metric in the panel: the text plus an optional graph, drawn either
+        // behind the text (style 1) or after it (style 2; below it when vertical).
+        component MetricCell: Item {
+            id: cell
+            property string caption                 // vertical layout: "CPU" over the value
+            property string hPrefix: ""             // horizontal layout: "CPU " before the value
+            property string valueText
+            property real minLabelWidth: 0
+            property color textColor: Kirigami.Theme.textColor
+            property var history: null
+            property real yFrom: 0
+            property real yTo: 100
+            property color lineColor: Kirigami.Theme.highlightColor
+
+            readonly property bool hasGraph: root.panelGraphStyle > 0 && history !== null
+            readonly property bool behind: hasGraph && root.panelGraphStyle === 1
+            readonly property bool inline: hasGraph && root.panelGraphStyle === 2
+
+            implicitWidth: content.implicitWidth
+            implicitHeight: content.implicitHeight
+
+            Spark {
+                visible: cell.behind
+                anchors.fill: parent
+                opacity: 0.5
+                history: cell.history
+                yFrom: cell.yFrom
+                yTo: cell.yTo
+                lineColor: cell.lineColor
+            }
+
+            GridLayout {
+                id: content
+                anchors.fill: parent
+                columns: compact.vertical ? 1 : 2
+                columnSpacing: Kirigami.Units.smallSpacing
+                rowSpacing: 0
+
+                PlasmaComponents.Label {
+                    Layout.alignment: Qt.AlignCenter
+                    Layout.minimumWidth: compact.vertical ? 0 : cell.minLabelWidth
+                    Layout.preferredWidth: compact.vertical ? -1 : cell.minLabelWidth
+                    Layout.fillWidth: compact.vertical
+                    horizontalAlignment: Text.AlignHCenter
+                    fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
+                    minimumPixelSize: 8
+                    text: compact.vertical ? cell.caption + "\n" + cell.valueText
+                                           : cell.hPrefix + cell.valueText
+                    color: cell.textColor
+                }
+                Spark {
+                    visible: cell.inline
+                    Layout.alignment: Qt.AlignCenter
+                    Layout.fillWidth: compact.vertical
+                    Layout.preferredWidth: compact.vertical ? -1 : Kirigami.Units.gridUnit * 4
+                    Layout.preferredHeight: Kirigami.Units.gridUnit * (compact.vertical ? 1 : 1.2)
+                    history: cell.history
+                    yFrom: cell.yFrom
+                    yTo: cell.yTo
+                    lineColor: cell.lineColor
+                }
+            }
+        }
+
         GridLayout {
             id: layout
             anchors.fill: parent
@@ -161,38 +228,43 @@ PlasmoidItem {
             columnSpacing: Kirigami.Units.largeSpacing
             rowSpacing: Kirigami.Units.smallSpacing
 
-            PlasmaComponents.Label {
+            MetricCell {
                 visible: root.showCpu
                 Layout.alignment: Qt.AlignCenter
-                Layout.minimumWidth: compact.vertical ? 0 : cpuMetrics.width
                 Layout.fillWidth: compact.vertical
-                horizontalAlignment: Text.AlignHCenter
-                fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
-                minimumPixelSize: 8
-                text: compact.vertical ? "CPU\n" + root.pct(cpuUsage.value) : "CPU " + root.pct(cpuUsage.value)
+                Layout.fillHeight: !compact.vertical
+                caption: "CPU"
+                hPrefix: "CPU "
+                valueText: root.pct(cpuUsage.value)
+                minLabelWidth: cpuMetrics.width
+                history: root.cpuHist
             }
             Divider { visible: root.showCpu && (root.showRam || root.showTemp) }
-            PlasmaComponents.Label {
+            MetricCell {
                 visible: root.showRam
                 Layout.alignment: Qt.AlignCenter
-                Layout.minimumWidth: compact.vertical ? 0 : ramMetrics.width
                 Layout.fillWidth: compact.vertical
-                horizontalAlignment: Text.AlignHCenter
-                fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
-                minimumPixelSize: 8
-                text: compact.vertical ? "RAM\n" + root.pct(memPercent.value) : "RAM " + root.pct(memPercent.value)
+                Layout.fillHeight: !compact.vertical
+                caption: "RAM"
+                hPrefix: "RAM "
+                valueText: root.pct(memPercent.value)
+                minLabelWidth: ramMetrics.width
+                history: root.ramHist
             }
             Divider { visible: root.showRam && root.showTemp }
-            PlasmaComponents.Label {
+            MetricCell {
                 visible: root.showTemp
                 Layout.alignment: Qt.AlignCenter
-                Layout.minimumWidth: compact.vertical ? 0 : tempMetrics.width
                 Layout.fillWidth: compact.vertical
-                horizontalAlignment: Text.AlignHCenter
-                fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
-                minimumPixelSize: 8
-                text: compact.vertical ? "Temp\n" + root.temp(tempAvg.value) : root.temp(tempAvg.value)
-                color: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                Layout.fillHeight: !compact.vertical
+                caption: "Temp"
+                valueText: root.temp(tempAvg.value)
+                minLabelWidth: tempMetrics.width
+                textColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                history: root.tempHist
+                yFrom: 20
+                yTo: 100
+                lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
             }
             PlasmaComponents.Label {
                 visible: !root.showCpu && !root.showRam && !root.showTemp
