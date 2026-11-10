@@ -6,7 +6,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-SRC="glance"
+SRC="package"
 read -r ID VERSION < <(python3 -c "import json; k = json.load(open('$SRC/metadata.json'))['KPlugin']; print(k['Id'], k['Version'])")
 OUT="dist/$ID-$VERSION.plasmoid"
 

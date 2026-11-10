@@ -3,7 +3,7 @@
 This document is for a developer who needs to change the widget. It describes how the code works today and
 names functions and properties rather than line numbers, because line numbers drift. Search for the name.
 
-Everything here was checked against the source in `glance/`. Where a statement comes from a code comment or
+Everything here was checked against the source in `package/`. Where a statement comes from a code comment or
 from the author's notes and could not be checked by reading the code (measurements, runtime behaviour), it says so.
 
 Contents
@@ -29,7 +29,7 @@ Contents
 ## 1. File map
 
 ```
-glance/
+package/
   metadata.json                  plugin id org.local.cpumemtemp, name "Glance", version, Plasma/Applet
   contents/config/main.xml       every setting, its type and default (the kcfg schema)
   contents/config/config.qml     registers the three settings pages (ConfigCategory)

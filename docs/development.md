@@ -24,7 +24,7 @@ There is no `qmllint` on the reference machine, so there is no linter to install
 ## Repository layout
 
 ```
-glance/                           the widget package (what gets installed)
+package/                           the widget package (what gets installed)
   metadata.json                   plugin id, name, version, minimum Plasma API
   contents/config/main.xml        settings schema and defaults
   contents/config/config.qml      registers the settings pages
@@ -56,7 +56,7 @@ The visible name is "Glance", but the plugin ID stays `org.local.cpumemtemp` on 
 panel widget's settings under it (why, and what a change would do:
 [settings-reference.md](settings-reference.md#the-plugin-id-must-never-change)). The ID also appears in
 the install folder (`~/.local/share/plasma/plasmoids/org.local.cpumemtemp/`), in `plasmawindowed
-org.local.cpumemtemp` and in the package file name. The scripts read it from `glance/metadata.json`
+org.local.cpumemtemp` and in the package file name. The scripts read it from `package/metadata.json`
 (`KPlugin.Id`), the single place it is defined; do not hard-code it elsewhere. Change the display name
 and description freely; leave `Id`.
 
@@ -87,11 +87,11 @@ Plasma expects:
 ```
 T=$(mktemp -d)
 mkdir -p "$T/plasma/plasmoids"
-ln -s "$PWD/glance" "$T/plasma/plasmoids/org.local.cpumemtemp"    # or: cp -r glance ...
+ln -s "$PWD/package" "$T/plasma/plasmoids/org.local.cpumemtemp"    # or: cp -r package ...
 XDG_DATA_HOME="$T" plasmawindowed org.local.cpumemtemp
 ```
 
-A copy freezes a snapshot (copying `glance/` to `$XDG_DATA_HOME/plasma/plasmoids/org.local.cpumemtemp`
+A copy freezes a snapshot (copying `package/` to `$XDG_DATA_HOME/plasma/plasmoids/org.local.cpumemtemp`
 makes `plasmawindowed` load that copy; this is the same location `install.sh` uses). A symlink should
 pick up your edits on the next launch, but that variant was not verified. If the window shows nothing,
 check the folder name equals the `Id` in `metadata.json`. Delete the temporary directory when done.
@@ -226,11 +226,11 @@ There is no automated test suite and no `qmllint` here. Consequences:
 ## Releasing
 
 A release is a version bump plus a package. The last two release commits, `Release v0.7` and `Release
-v0.8`, each changed exactly two files, `glance/metadata.json` and `README.md`, and nothing else (earlier
+v0.8`, each changed exactly two files, `package/metadata.json` and `README.md`, and nothing else (earlier
 ones touched the same two files, except `Release v0.2`, which changed only `metadata.json`). Follow the
 same steps:
 
-1. **Bump the version** in `glance/metadata.json` (`KPlugin.Version`, for example `"0.8"` to `"0.9"`).
+1. **Bump the version** in `package/metadata.json` (`KPlugin.Version`, for example `"0.8"` to `"0.9"`).
 2. **Update the README**:
    - the two install-from-package lines that name the file (`org.local.cpumemtemp-0.8.plasmoid`, in "From
      the package", the `-i` and the `sudo ... -g -i` examples);
@@ -247,7 +247,7 @@ same steps:
    ```
    P=$(mktemp -d)
    kpackagetool6 -t Plasma/Applet -i dist/org.local.cpumemtemp-0.9.plasmoid --packageroot "$P"
-   diff -r glance "$P/org.local.cpumemtemp"
+   diff -r package "$P/org.local.cpumemtemp"
    ```
 
    `kpackagetool6 --packageroot` installs into `$P/org.local.cpumemtemp`. No output from `diff` means the

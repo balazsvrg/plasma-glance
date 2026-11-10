@@ -1,6 +1,6 @@
 # Glance settings reference
 
-Every configuration key declared in `glance/contents/config/main.xml`, grouped by where it appears in the settings dialog. The key names, types, defaults and ranges come straight from `main.xml`; the labels come from the three settings pages (`configGeneral.qml`, `configMetrics.qml`, `configGraphs.qml`, registered in `config.qml` as the tabs **General**, **Metrics** and **Graphs**).
+Every configuration key declared in `package/contents/config/main.xml`, grouped by where it appears in the settings dialog. The key names, types, defaults and ranges come straight from `main.xml`; the labels come from the three settings pages (`configGeneral.qml`, `configMetrics.qml`, `configGraphs.qml`, registered in `config.qml` as the tabs **General**, **Metrics** and **Graphs**).
 
 Notes that apply to every table:
 
@@ -27,7 +27,7 @@ The three config groups match the `<group>` elements in `main.xml`. Keys that st
 
 ### The plugin ID must never change
 
-The internal plugin ID is `org.local.cpumemtemp` (`glance/metadata.json`, `Id`), even though the visible name is "Glance". Plasma links the stored settings to the widget by this ID (the `plugin=` line above). If the ID changed, Plasma would no longer find the settings of the placed widget, and it would start again with the defaults (and treat the old entry as a missing widget).
+The internal plugin ID is `org.local.cpumemtemp` (`package/metadata.json`, `Id`), even though the visible name is "Glance". Plasma links the stored settings to the widget by this ID (the `plugin=` line above). If the ID changed, Plasma would no longer find the settings of the placed widget, and it would start again with the defaults (and treat the old entry as a missing widget).
 
 ### Resetting
 

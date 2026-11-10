@@ -239,7 +239,7 @@ guide for developers, and a development and release guide.
 ## Develop
 
 ```
-kpackagetool6 -t Plasma/Applet -u glance   # reinstall after edits
+kpackagetool6 -t Plasma/Applet -u package   # reinstall after edits
 plasmawindowed org.local.cpumemtemp                      # test in a plain window
 ```
 
@@ -262,7 +262,7 @@ Graphs use KDE Quick Charts (`org.kde.quickcharts`: `LineChart`, `HistoryProxySo
 ## Layout
 
 ```
-glance/
+package/
   metadata.json                 widget id, name, API version
   contents/config/main.xml      settings schema and defaults
   contents/config/config.qml    registers the settings pages
@@ -304,7 +304,7 @@ package.sh                      builds the .plasmoid into dist/
 
 **0.6**
 - Renamed to **Glance**. The internal plugin ID is unchanged, so an existing panel widget keeps working
-  with all its settings; the folder is now `glance/`.
+  with all its settings; the source folder was renamed too.
 - A full installation guide in this README, and `package.sh` to build a `.plasmoid` file.
 - Cleanup and efficiency: sensors that nothing shows are switched off, hidden stats build no cells, the
   popup graphs share one component, and the drag no longer recomputes its layouts on every mouse move.
