@@ -16,6 +16,10 @@
             <label>Show CPU temperature</label>
             <default>true</default>
         </entry>
+        <entry name="showFreq" type="Bool">
+            <label>Show CPU frequency</label>
+            <default>false</default>
+        </entry>
         <entry name="useFahrenheit" type="Bool">
             <label>Show temperature in Fahrenheit</label>
             <default>false</default>
@@ -49,6 +53,10 @@
         <entry name="popupTempMax" type="Bool">
             <label>Popup: show hottest core temperature</label>
             <default>true</default>
+        </entry>
+        <entry name="popupFreq" type="Bool">
+            <label>Popup: show CPU frequency</label>
+            <default>false</default>
         </entry>
         <entry name="popupCores" type="Bool">
             <label>Popup: show per-core temperatures</label>

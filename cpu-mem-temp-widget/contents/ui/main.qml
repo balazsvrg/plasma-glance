@@ -16,12 +16,14 @@ PlasmoidItem {
     readonly property bool showCpu: Plasmoid.configuration.showCpu
     readonly property bool showRam: Plasmoid.configuration.showRam
     readonly property bool showTemp: Plasmoid.configuration.showTemp
+    readonly property bool showFreq: Plasmoid.configuration.showFreq
     readonly property bool useF: Plasmoid.configuration.useFahrenheit
     readonly property bool popupCpu: Plasmoid.configuration.popupCpu
     readonly property bool popupMemory: Plasmoid.configuration.popupMemory
     readonly property bool popupTempAvg: Plasmoid.configuration.popupTempAvg
     readonly property bool popupTempMax: Plasmoid.configuration.popupTempMax
     readonly property bool popupCores: Plasmoid.configuration.popupCores
+    readonly property bool popupFreq: Plasmoid.configuration.popupFreq
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs }
@@ -30,6 +32,17 @@ PlasmoidItem {
     Sensors.Sensor { id: memTotal;   sensorId: "memory/physical/total";        updateRateLimit: root.refreshMs }
     Sensors.Sensor { id: tempAvg;    sensorId: "cpu/all/averageTemperature";   updateRateLimit: root.refreshMs }
     Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs }
+    Sensors.Sensor { id: freqAvg;    sensorId: "cpu/all/averageFrequency";     updateRateLimit: root.refreshMs }
+    Sensors.Sensor { id: freqMin;    sensorId: "cpu/all/minimumFrequency";     updateRateLimit: root.refreshMs }
+    Sensors.Sensor {
+        id: freqMax
+        sensorId: "cpu/all/maximumFrequency"
+        updateRateLimit: root.refreshMs
+        // The hardware maximum is not a sensor, so the frequency graph's scale
+        // grows to the highest value seen (never below 1 GHz).
+        onValueChanged: if (root.isNum(value) && value > root.freqPeak) root.freqPeak = value
+    }
+    property real freqPeak: 1000
     // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
     Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount" }
 
@@ -75,10 +88,12 @@ PlasmoidItem {
     History { id: cpuHistory;  sensor: cpuUsage;  wanted: (root.panelGraphs && root.showCpu)  || (root.popupGraphs && root.popupCpu) }
     History { id: ramHistory;  sensor: memPercent; wanted: (root.panelGraphs && root.showRam)  || (root.popupGraphs && root.popupMemory) }
     History { id: tempHistory; sensor: tempAvg;   wanted: (root.panelGraphs && root.showTemp) || (root.popupGraphs && root.popupTempAvg) }
+    History { id: freqHistory; sensor: freqAvg;   wanted: (root.panelGraphs && root.showFreq) || (root.popupGraphs && root.popupFreq) }
 
     readonly property var cpuHist:  cpuHistory.historySource
     readonly property var ramHist:  ramHistory.historySource
     readonly property var tempHist: tempHistory.historySource
+    readonly property var freqHist: freqHistory.historySource
 
     // One small line graph; used by the popup and (next) the panel.
     component Spark: Charts.LineChart {
@@ -111,6 +126,12 @@ PlasmoidItem {
         return Math.round(useF ? v * 9 / 5 + 32 : v) + unit
     }
     function gib(v)   { return isNum(v) ? (v / 1073741824).toFixed(1) + " GiB" : "-- GiB" }
+    // CPU frequency arrives in MHz; show GHz from 1000 MHz up.
+    function ghzNumber(v) { return isNum(v) ? (v / 1000).toFixed(1) : "--" }
+    function freq(v) {
+        if (!isNum(v)) return "-- GHz"
+        return v >= 1000 ? ghzNumber(v) + " GHz" : Math.round(v) + " MHz"
+    }
 
     // Each temperature is highlighted by its own value, so the colour always
     // matches the number shown next to it.
@@ -122,6 +143,7 @@ PlasmoidItem {
         if (showCpu)  parts.push("CPU " + pct(cpuUsage.value))
         if (showRam)  parts.push("RAM " + pct(memPercent.value))
         if (showTemp) parts.push(temp(tempAvg.value))
+        if (showFreq) parts.push(freq(freqAvg.value))
         return parts.join(" · ")
     }
 
@@ -146,6 +168,7 @@ PlasmoidItem {
         TextMetrics { id: cpuMetrics;  font: Kirigami.Theme.defaultFont; text: "CPU 100%" }
         TextMetrics { id: ramMetrics;  font: Kirigami.Theme.defaultFont; text: "RAM 100%" }
         TextMetrics { id: tempMetrics; font: Kirigami.Theme.defaultFont; text: root.useF ? "212°F" : "100°C" }
+        TextMetrics { id: freqMetrics; font: Kirigami.Theme.defaultFont; text: "9.9 GHz" }
 
         // Thin divider spanning the full panel thickness (full height on a
         // horizontal panel, full width on a vertical one).
@@ -225,7 +248,7 @@ PlasmoidItem {
         GridLayout {
             id: layout
             anchors.fill: parent
-            columns: compact.vertical ? 1 : 5
+            columns: compact.vertical ? 1 : 7
             columnSpacing: Kirigami.Units.largeSpacing
             rowSpacing: Kirigami.Units.smallSpacing
 
@@ -240,7 +263,7 @@ PlasmoidItem {
                 minLabelWidth: cpuMetrics.width
                 history: root.cpuHist
             }
-            Divider { visible: root.showCpu && (root.showRam || root.showTemp) }
+            Divider { visible: root.showRam && root.showCpu }
             MetricCell {
                 visible: root.showRam
                 Layout.alignment: Qt.AlignCenter
@@ -252,7 +275,7 @@ PlasmoidItem {
                 minLabelWidth: ramMetrics.width
                 history: root.ramHist
             }
-            Divider { visible: root.showRam && root.showTemp }
+            Divider { visible: root.showTemp && (root.showCpu || root.showRam) }
             MetricCell {
                 visible: root.showTemp
                 Layout.alignment: Qt.AlignCenter
@@ -267,8 +290,20 @@ PlasmoidItem {
                 yTo: root.tempYMax
                 lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
             }
+            Divider { visible: root.showFreq && (root.showCpu || root.showRam || root.showTemp) }
+            MetricCell {
+                visible: root.showFreq
+                Layout.alignment: Qt.AlignCenter
+                Layout.fillWidth: compact.vertical
+                Layout.fillHeight: !compact.vertical
+                caption: "Freq"
+                valueText: root.freq(freqAvg.value)
+                minLabelWidth: freqMetrics.width
+                history: root.freqHist
+                yTo: root.freqPeak
+            }
             PlasmaComponents.Label {
-                visible: !root.showCpu && !root.showRam && !root.showTemp
+                visible: !root.showCpu && !root.showRam && !root.showTemp && !root.showFreq
                 Layout.alignment: Qt.AlignCenter
                 text: "–"
             }
@@ -305,6 +340,25 @@ PlasmoidItem {
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
             history: (root.popupGraphs && root.popupMemory) ? root.ramHist : null
+        }
+
+        PlasmaComponents.Label { visible: root.popupFreq; text: "CPU frequency" }
+        PlasmaComponents.Label { visible: root.popupFreq; text: root.freq(freqAvg.value); font.bold: true }
+
+        PlasmaComponents.Label { visible: root.popupFreq; text: "Min / max" }
+        PlasmaComponents.Label {
+            visible: root.popupFreq
+            text: root.ghzNumber(freqMin.value) + " / " + root.ghzNumber(freqMax.value) + " GHz"
+            font.bold: true
+        }
+
+        Spark {
+            visible: root.popupGraphs && root.popupFreq && root.freqHist !== null
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
+            history: (root.popupGraphs && root.popupFreq) ? root.freqHist : null
+            yTo: root.freqPeak
         }
 
         PlasmaComponents.Label { visible: root.popupTempAvg; text: "CPU temp (avg)" }
@@ -384,9 +438,9 @@ PlasmoidItem {
 
         PlasmaComponents.Label {
             visible: !root.popupCpu && !root.popupMemory && !root.popupTempAvg
-                     && !root.popupTempMax && !root.popupCores
+                     && !root.popupTempMax && !root.popupCores && !root.popupFreq
             Layout.columnSpan: 2
-            text: "Nothing to show. Enable items under Configure > Popup."
+            text: "Nothing to show. Enable items under Configure > Metrics."
             opacity: 0.7
         }
     }

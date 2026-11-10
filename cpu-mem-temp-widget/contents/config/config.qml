@@ -8,9 +8,9 @@ ConfigModel {
         source: "configGeneral.qml"
     }
     ConfigCategory {
-        name: i18n("Popup")
+        name: i18n("Metrics")
         icon: "view-list-details"
-        source: "configPopup.qml"
+        source: "configMetrics.qml"
     }
     ConfigCategory {
         name: i18n("Graphs")

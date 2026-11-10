@@ -37,21 +37,25 @@ Uninstall with `./uninstall.sh` (remove it from your panels first).
 
 ## Settings
 
-Right-click the widget in the panel and choose **Configure…**. There are three tabs.
+Right-click the widget in the panel and choose **Configure…**. There are three tabs: General, Metrics and Graphs.
 
 **General**
 
 | Setting | Default |
 |---|---|
-| Show CPU / memory / temperature in the panel | all on |
 | Temperature unit | °C |
 | Warning threshold (always entered in °C) | 80 |
 | Refresh interval | 1000 ms (min 250) |
 
-**Popup** (what the click-to-open details show; every item is on by default)
+**Metrics**: one row per stat, with a *Panel* and a *Popup* checkbox each.
 
-CPU usage, memory (used / total), average temperature, hottest-core temperature,
-and per-core temperatures. Turning off the per-core list also stops its sensors.
+| Stat | Panel | Popup |
+|---|---|---|
+| CPU usage, memory, CPU temperature | on | on |
+| CPU frequency | off | off |
+| Hottest core, per-core temperatures | n/a | on |
+
+Turning off per-core temperatures also stops its sensors.
 
 **Graphs**
 
@@ -78,7 +82,8 @@ panel to a screen edge or add a temporary vertical panel.
 Sensor IDs used (check with `kstatsviewer --list`):
 `cpu/all/usage`, `memory/physical/usedPercent`, `memory/physical/used`,
 `memory/physical/total`, `cpu/all/averageTemperature`, `cpu/all/maximumTemperature`,
-`cpu/all/coreCount`, `cpu/cpuN/temperature`.
+`cpu/all/coreCount`, `cpu/cpuN/temperature`,
+`cpu/all/averageFrequency`, `cpu/all/minimumFrequency`, `cpu/all/maximumFrequency`.
 Graphs use KDE Quick Charts (`org.kde.quickcharts`: `LineChart`, `HistoryProxySource`).
 
 ## Layout
@@ -90,7 +95,7 @@ cpu-mem-temp-widget/
   contents/config/config.qml    registers the settings page
   contents/ui/main.qml          panel view, popup, sensors
   contents/ui/configGeneral.qml settings tab: General
-  contents/ui/configPopup.qml   settings tab: Popup
+  contents/ui/configMetrics.qml settings tab: Metrics
   contents/ui/configGraphs.qml  settings tab: Graphs
 install.sh / uninstall.sh
 ```

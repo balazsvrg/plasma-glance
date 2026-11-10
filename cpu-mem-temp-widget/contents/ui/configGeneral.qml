@@ -8,37 +8,15 @@ KCM.SimpleKCM {
     id: page
 
     // Plasma binds these to the entries in contents/config/main.xml.
-    property alias cfg_showCpu: showCpu.checked
-    property alias cfg_showRam: showRam.checked
-    property alias cfg_showTemp: showTemp.checked
     property bool cfg_useFahrenheit
     property alias cfg_warnTemp: warnTemp.value
     property alias cfg_refreshMs: refreshMs.value
 
-    property bool cfg_showCpuDefault
-    property bool cfg_showRamDefault
-    property bool cfg_showTempDefault
     property bool cfg_useFahrenheitDefault
     property int cfg_warnTempDefault
     property int cfg_refreshMsDefault
 
     Kirigami.FormLayout {
-        QQC2.CheckBox {
-            id: showCpu
-            Kirigami.FormData.label: i18n("Show:")
-            text: i18n("CPU usage")
-        }
-        QQC2.CheckBox {
-            id: showRam
-            text: i18n("Memory usage")
-        }
-        QQC2.CheckBox {
-            id: showTemp
-            text: i18n("CPU temperature")
-        }
-
-        Item { Kirigami.FormData.isSection: true }
-
         QQC2.ComboBox {
             id: unitBox
             Kirigami.FormData.label: i18n("Temperature unit:")
