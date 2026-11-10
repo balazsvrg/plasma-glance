@@ -39,16 +39,18 @@ PlasmoidItem {
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs }
     Sensors.Sensor { id: memPercent; sensorId: "memory/physical/usedPercent";  updateRateLimit: root.refreshMs }
-    Sensors.Sensor { id: memUsed;    sensorId: "memory/physical/used";         updateRateLimit: root.refreshMs }
-    Sensors.Sensor { id: memTotal;   sensorId: "memory/physical/total";        updateRateLimit: root.refreshMs }
+    // Sensors that only the popup, or only an optional stat, uses are switched off when nothing shows them.
+    Sensors.Sensor { id: memUsed;    sensorId: "memory/physical/used";         updateRateLimit: root.refreshMs; enabled: root.popupMemory }
+    Sensors.Sensor { id: memTotal;   sensorId: "memory/physical/total";        updateRateLimit: root.refreshMs; enabled: root.popupMemory }
     Sensors.Sensor { id: tempAvg;    sensorId: "cpu/all/averageTemperature";   updateRateLimit: root.refreshMs }
-    Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs }
-    Sensors.Sensor { id: freqAvg;    sensorId: "cpu/all/averageFrequency";     updateRateLimit: root.refreshMs }
-    Sensors.Sensor { id: freqMin;    sensorId: "cpu/all/minimumFrequency";     updateRateLimit: root.refreshMs }
+    Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs; enabled: root.popupTempMax }
+    Sensors.Sensor { id: freqAvg;    sensorId: "cpu/all/averageFrequency";     updateRateLimit: root.refreshMs; enabled: root.showFreq || root.popupFreq }
+    Sensors.Sensor { id: freqMin;    sensorId: "cpu/all/minimumFrequency";     updateRateLimit: root.refreshMs; enabled: root.popupFreq }
     Sensors.Sensor {
         id: freqMax
         sensorId: "cpu/all/maximumFrequency"
         updateRateLimit: root.refreshMs
+        enabled: root.showFreq || root.popupFreq
         // The hardware maximum is not a sensor, so the frequency graph's scale
         // grows to the highest value seen (never below 1 GHz).
         onValueChanged: if (root.isNum(value) && value > root.freqPeak) root.freqPeak = value
@@ -59,21 +61,19 @@ PlasmoidItem {
         id: netDown
         sensorId: "network/all/download"
         updateRateLimit: root.refreshMs
-        onValueChanged: root.trackNetPeak(value)
+        enabled: root.showNet || root.popupNet
+        onValueChanged: root.trackNetPeak()          // once per refresh (upload updates in the same tick)
     }
-    Sensors.Sensor {
-        id: netUp
-        sensorId: "network/all/upload"
-        updateRateLimit: root.refreshMs
-        onValueChanged: root.trackNetPeak(value)
-    }
-    Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs }
-    Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs }
-    // Network graph scale: follows the recent peak and decays slowly, never below 100 KB/s.
+    Sensors.Sensor { id: netUp; sensorId: "network/all/upload"; updateRateLimit: root.refreshMs; enabled: root.showNet || root.popupNet }
+    Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs; enabled: root.popupNet }
+    Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs; enabled: root.popupNet }
+    // Network graph scale: rises at once to the highest rate (down or up) and decays about 1% per
+    // second of real time, whatever the refresh rate; never below 100 KB/s.
     property real netPeak: 100000
-    function trackNetPeak(v) {
-        if (!isNum(v)) return
-        netPeak = Math.max(100000, Number(v), netPeak * 0.995)
+    function trackNetPeak() {
+        var d = isNum(netDown.value) ? Number(netDown.value) : 0
+        var u = isNum(netUp.value) ? Number(netUp.value) : 0
+        netPeak = Math.max(100000, d, u, netPeak * Math.pow(0.99, refreshMs / 1000))
     }
     // ---- battery ----
     // Data comes from Plasma's power-management engine, the same source KDE's own
@@ -128,7 +128,9 @@ PlasmoidItem {
 
     component FanDiscovery: Item {
         id: fanDisc
-        signal found(var ids)
+        signal found(var ids, bool final)         // final: stop looking (found some, or gave up)
+        property int attempts: 0
+        readonly property int maxAttempts: 10     // about 30 s: the sensor tree can fill in slowly at login
 
         Sensors.SensorTreeModel { id: fanTree }
         KItemModels.KDescendantsProxyModel { id: fanFlat; model: fanTree }
@@ -149,20 +151,27 @@ PlasmoidItem {
                 if (/^lmsensors\/[^\/]+\/fan\d+$/.test(id)) ids.push(id)
             }
             ids.sort()
-            found(ids)
+            ++attempts
+            if (ids.length > 0 || attempts >= maxAttempts) {
+                found(ids, true)
+            } else {
+                fanScan.interval = 3000               // an empty tree may just be slow: look again
+                fanScan.restart()
+            }
         }
     }
 
-    // Alive only while a fan stat is shown, plus once at start-up so the settings
-    // pages know whether a fan exists.
+    // Runs until it has found the fans (or has looked for about 30 s and given up), then unloads:
+    // it is a one-time lookup and the sensor-tree models are not needed afterwards. An empty first scan
+    // never decides "no fan", and never overwrites the saved fanCount.
     Loader {
-        active: root.fanWanted || !root.fanDiscoveryDone
+        active: !root.fanDiscoveryDone
         sourceComponent: FanDiscovery {
-            onFound: function (ids) {
-                if (JSON.stringify(ids) !== JSON.stringify(root.fanIds))
+            onFound: function (ids, final) {
+                if (ids.length > 0 && JSON.stringify(ids) !== JSON.stringify(root.fanIds))
                     root.fanIds = ids
-                root.fanDiscoveryDone = true
-                if (Plasmoid.configuration.fanCount !== ids.length)
+                root.fanDiscoveryDone = final
+                if (final && Plasmoid.configuration.fanCount !== ids.length)
                     Plasmoid.configuration.fanCount = ids.length
             }
         }
@@ -172,11 +181,12 @@ PlasmoidItem {
     Repeater {
         id: fanRepeater
         model: root.fanWanted ? root.fanIds : []
-        onItemAdded: root.fanItems = collectFans()
-        onItemRemoved: root.fanItems = collectFans()
-        function collectFans() {
+        onItemAdded: root.fanItems = collectFans(null)
+        onItemRemoved: function (index, item) { root.fanItems = collectFans(item) }
+        // The delegate being removed may still be reachable here, so leave it out explicitly.
+        function collectFans(removed) {
             var items = []
-            for (var i = 0; i < count; ++i) { var it = itemAt(i); if (it) items.push(it) }
+            for (var i = 0; i < count; ++i) { var it = itemAt(i); if (it && it !== removed) items.push(it) }
             return items
         }
         delegate: Item {
@@ -211,8 +221,7 @@ PlasmoidItem {
     // Each stat has its own history. It is collected only while a graph that
     // shows that stat is enabled, and it starts once the stat's sensor has
     // reported a real number (so the history never begins with fake zeros).
-    readonly property int styleBehind: 1
-    readonly property int styleInline: 2   // keep in sync with the dropdown in configGraphs.qml
+    readonly property int styleInline: 2   // stored value of "Inline"; keep in sync with configGraphs.qml (1 = behind text)
     readonly property int panelGraphStyle: Plasmoid.configuration.panelGraphStyle
     readonly property bool graphInline: panelGraphStyle === styleInline   // anything else (incl. an old 0) is "behind"
     // Which stats get a graph: gp* in the panel, gd* in the popup (Metrics tab).
@@ -480,15 +489,11 @@ PlasmoidItem {
     readonly property bool avgHot: isNum(tempAvg.value) && tempAvg.value >= warnTempC
     readonly property bool tempHot: isNum(tempMax.value) && tempMax.value >= warnTempC
 
+    // Every shown stat, in the user's order, as the panel writes it (also the ones hidden by the maximum length).
     function tooltipText() {
         var parts = []
-        if (showCpu)  parts.push("CPU " + pct(cpuUsage.value))
-        if (showRam)  parts.push("RAM " + pct(memPercent.value))
-        if (showTemp) parts.push(temp(tempAvg.value))
-        if (showFreq) parts.push(freq(freqAvg.value))
-        if (showNet)  parts.push(netText())
-        if (batShown) parts.push("BAT " + batText())
-        if (fanShown) parts.push(rpmText(fanRpm))
+        for (var i = 0; i < statOrder.length; ++i)
+            if (statShown(statOrder[i])) parts.push(statText(statOrder[i], false, false))
         return parts.join(" · ")
     }
 
@@ -500,8 +505,9 @@ PlasmoidItem {
     //   1  inline graphs become behind-text graphs (those take no length)
     //   2  compact text (CPU 8% -> C 8%, 2.2 GHz -> 2.2G, ...), still readable
     //   3  tight spacing
-    // If even that is too long, stats are dropped from the end (Fan, Battery, Net, Freq,
-    // Temp, RAM) until it fits. CPU is never dropped. The tooltip always lists everything.
+    // If even that is too long, stats are dropped from the end of the user's order (Fan, Battery, Net,
+    // Freq, Temp, RAM in the default order) until it fits. The first stat in the order is never dropped.
+    // The tooltip always lists everything.
     // The saved limit (px, 0 = no limit), or the live value while the edge handle is being dragged.
     readonly property int maxLength: dragging ? dragMax() : Plasmoid.configuration.maxLength
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
@@ -598,8 +604,8 @@ PlasmoidItem {
         return Kirigami.Theme.textColor
     }
     function statLineColor(id) {
-        return statTextColor(id) === Kirigami.Theme.negativeTextColor ? Kirigami.Theme.negativeTextColor
-                                                                      : Kirigami.Theme.highlightColor
+        var alert = (id === "temp" && avgHot) || (id === "bat" && batLow)
+        return alert ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
     }
     function statHistory(id) {
         switch (id) {

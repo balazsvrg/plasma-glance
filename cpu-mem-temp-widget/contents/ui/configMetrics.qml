@@ -153,7 +153,10 @@ KCM.SimpleKCM {
         return true
     }
     function setAllGraphs(popup, on) {
-        for (var i = 0; i < stats.length; ++i) cfgSet(popup ? stats[i].popupGraph : stats[i].graph, on)
+        for (var i = 0; i < stats.length; ++i) {
+            if (!rowAvailable(stats[i].id)) continue          // not shown (no battery / fan): leave its setting alone
+            cfgSet(popup ? stats[i].popupGraph : stats[i].graph, on)
+        }
     }
 
     // ---- column sizes, shared by the header, the rows and the sub-rows so everything lines up ----
