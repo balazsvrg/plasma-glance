@@ -265,21 +265,6 @@ PlasmoidItem {
     readonly property bool graphInline: panelGraphStyle === styleInline   // anything else (incl. an old 0) is "behind"
     readonly property int chartStyleBar: 2   // stored value of "Bar"; keep in sync with configGraphs.qml (1 = line)
     readonly property bool barChart: Plasmoid.configuration.chartStyle === chartStyleBar   // anything else is "line"
-    // Which stats get a graph: gp* in the panel, gd* in the popup (Metrics tab).
-    readonly property bool gpCpu:  Plasmoid.configuration.graphPanelCpu
-    readonly property bool gpRam:  Plasmoid.configuration.graphPanelRam
-    readonly property bool gpTemp: Plasmoid.configuration.graphPanelTemp
-    readonly property bool gpFreq: Plasmoid.configuration.graphPanelFreq
-    readonly property bool gpNet:  Plasmoid.configuration.graphPanelNet
-    readonly property bool gpBat:  Plasmoid.configuration.graphPanelBat
-    readonly property bool gpFan:  Plasmoid.configuration.graphPanelFan
-    readonly property bool gdCpu:  Plasmoid.configuration.graphPopupCpu
-    readonly property bool gdRam:  Plasmoid.configuration.graphPopupRam
-    readonly property bool gdTemp: Plasmoid.configuration.graphPopupTemp
-    readonly property bool gdFreq: Plasmoid.configuration.graphPopupFreq
-    readonly property bool gdNet:  Plasmoid.configuration.graphPopupNet
-    readonly property bool gdBat:  Plasmoid.configuration.graphPopupBat
-    readonly property bool gdFan:  Plasmoid.configuration.graphPopupFan
     readonly property int historySeconds: Math.min(300, Math.max(30, Plasmoid.configuration.historySeconds))
     readonly property int historyLen: Math.max(2, Math.round(historySeconds * 1000 / refreshMs))
 
@@ -702,42 +687,21 @@ PlasmoidItem {
         }
         return false
     }
+    // The graph flags of a stat are the registry's config keys (gp: panel graph, gd: popup graph), read from the
+    // configuration by name: a binding that calls these still re-evaluates when the setting changes.
     function statGraph(id) {
-        switch (id) {
-        case "cpu":  return gpCpu
-        case "ram":  return gpRam
-        case "temp": return gpTemp
-        case "freq": return gpFreq
-        case "net":  return gpNet
-        case "bat":  return gpBat
-        case "fan":  return gpFan
-        }
-        return false
+        var m = M.byId(id)
+        return !!m && !!Plasmoid.configuration[m.keys.gp]
     }
     function statPopupGraph(id) {
-        switch (id) {
-        case "cpu":  return gdCpu
-        case "ram":  return gdRam
-        case "temp": return gdTemp
-        case "freq": return gdFreq
-        case "net":  return gdNet
-        case "bat":  return gdBat
-        case "fan":  return gdFan
-        }
-        return false
+        var m = M.byId(id)
+        return !!m && !!Plasmoid.configuration[m.keys.gd]
     }
     // Whether the stat's row is on in the popup (its popup flag, and the battery / fan exists).
     function statPopupOn(id) {
-        switch (id) {
-        case "cpu":  return popupCpu
-        case "ram":  return popupMemory
-        case "temp": return popupTempAvg
-        case "freq": return popupFreq
-        case "net":  return popupNet
-        case "bat":  return popupBatShown
-        case "fan":  return popupFanShown
-        }
-        return false
+        var m = M.byId(id)
+        if (!m || !Plasmoid.configuration[m.keys.popup]) return false
+        return id === "bat" ? hasBattery : (id === "fan" ? hasFan : true)
     }
     function shownIds() {
         var ids = []

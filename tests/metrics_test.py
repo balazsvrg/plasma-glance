@@ -182,6 +182,11 @@ hs = re.search(r'historySensors: \(\{(.*?)\}\)', MAIN_QML, re.S).group(1)
 equal("every registry series has a sensor object for its history",
       sorted(re.findall(r'"(\w+\.\w+)":', hs)),
       sorted(run(M, "(function(){var o=[];METRICS.forEach(function(m){m.series.forEach(function(s){o.push(m.id+'.'+s)})});return o})()")))
+for gone in ("readonly property bool gpCpu", "readonly property bool gdFan", "readonly property bool gpNet"):
+    check("main.qml no longer has `%s` (the graph flags are read through the registry's keys)" % gone, gone not in MAIN_QML)
+check("statGraph reads the registry's gp key", "Plasmoid.configuration[m.keys.gp]" in MAIN_QML)
+check("statPopupGraph reads the registry's gd key", "Plasmoid.configuration[m.keys.gd]" in MAIN_QML)
+check("statPopupOn reads the registry's popup key", "Plasmoid.configuration[m.keys.popup]" in MAIN_QML)
 check("statHistory and statHistory2 take the first and second series", "historyOf(id, m.series[0])" in MAIN_QML and "historyOf(id, m.series[1])" in MAIN_QML)
 # The settings the formatters read must be the ones main.qml puts into the context: a formatter that starts
 # reading another setting would silently get undefined.
