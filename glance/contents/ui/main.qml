@@ -590,6 +590,7 @@ PlasmoidItem {
     TextMetrics { id: mMHzV;  font: Kirigami.Theme.defaultFont; text: "1200 MHz" }
     TextMetrics { id: mNetV;  font: Kirigami.Theme.defaultFont; text: "↓999M" }
     TextMetrics { id: mBatV;  font: Kirigami.Theme.defaultFont; text: "100% ↓" }
+    TextMetrics { id: mCap;   font: Kirigami.Theme.defaultFont; text: "Temp" }      // widest caption
     TextMetrics { id: mLine;  font: Kirigami.Theme.defaultFont; text: "Ag" }       // one line of text
 
     function reservedWidth(id, compact) {
@@ -607,9 +608,12 @@ PlasmoidItem {
 
     // Widest line of a stat's text on a vertical panel (what must fit in the panel's thickness).
     function verticalWidth(id, compact) {
+        return Math.max(mCap.width, verticalValueWidth(id, compact))
+    }
+    function verticalValueWidth(id, compact) {
         switch (id) {
-        case "cpu":  return compact ? mCpuC.width : mPctV.width
-        case "ram":  return compact ? mRamC.width : mPctV.width
+        case "cpu":  return mPctV.width
+        case "ram":  return mPctV.width
         case "temp": return compact ? mTempC.width : mTemp.width
         case "freq": return compact ? mFreqC.width : Math.max(mFreq.width, mMHzV.width)
         case "net":  return mNetV.width
@@ -666,7 +670,10 @@ PlasmoidItem {
     }
 
     // The text of a stat in the panel, for the current step (compact or full) and orientation.
+    // On a vertical panel the caption line is always kept, so it is easy to tell which stat is shown;
+    // the compact step only shortens the value line.
     function statText(id, compact, vert) {
+        if (vert) return verticalText(id, compact)
         switch (id) {
         case "cpu":
             return compact ? "C " + pct(cpuUsage.value) : (vert ? "CPU\n" : "CPU ") + pct(cpuUsage.value)
@@ -687,6 +694,19 @@ PlasmoidItem {
         return ""
     }
 
+    function verticalText(id, compact) {
+        switch (id) {
+        case "cpu":  return "CPU\n" + pct(cpuUsage.value)
+        case "ram":  return "RAM\n" + pct(memPercent.value)
+        case "temp": return "Temp\n" + (compact ? tempShort(tempAvg.value) : temp(tempAvg.value))
+        case "freq": return "Freq\n" + (compact ? freqShort(freqAvg.value) : freq(freqAvg.value))
+        case "net":  return "Net\n↓" + rateShort(netDown.value) + "\n↑" + rateShort(netUp.value)
+        case "bat":  return "Bat\n" + (compact ? pct(batPercent) + batArrowShort() : batText())
+        case "fan":  return "Fan\n" + rpmNumber(fanRpm)
+        }
+        return ""
+    }
+
     // Space one stat takes at a given step (width when horizontal, height when vertical).
     // Inline graphs take length, so they are only drawn inline at the first (full) step; from step 1 on
     // they are drawn behind the text. This one rule feeds the width calculation, the strip and the
@@ -703,7 +723,7 @@ PlasmoidItem {
             if (inlineGraph) w += gap + inlineGraphWidth
             return w
         }
-        var lines = (id === "net" ? 2 : 1) + (compact ? 0 : 1)          // value lines (+ caption line)
+        var lines = (id === "net" ? 2 : 1) + 1                          // value lines + caption line (always kept)
         var h = lines * mLine.height
         if (id === "fan") h += Kirigami.Units.iconSizes.smallMedium
         if (inlineGraph) h += Kirigami.Units.gridUnit
