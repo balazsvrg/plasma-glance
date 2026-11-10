@@ -1053,220 +1053,247 @@ PlasmoidItem {
         }
     }
 
-    fullRepresentation: GridLayout {
-        columns: 2
-        columnSpacing: Kirigami.Units.largeSpacing
-        Layout.minimumWidth: Kirigami.Units.gridUnit * 14
+    // ---- popup ----
+    // Built from the user's order: one block per stat (its rows plus its graph). The name column has
+    // a fixed width, so values line up from one block to the next.
+    TextMetrics { id: mPopupLabel; font: Kirigami.Theme.defaultFont; text: "CPU temp (max core)" }
+    readonly property real popupLabelWidth: mPopupLabel.width
 
-        PlasmaComponents.Label { visible: root.popupCpu; text: "CPU usage" }
-        PlasmaComponents.Label { visible: root.popupCpu; text: root.pct(cpuUsage.value); font.bold: true }
-
-        Spark {
-            visible: root.gdCpu && root.popupCpu && root.cpuHist !== null
-            Layout.columnSpan: 2
-            Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.gdCpu && root.popupCpu) ? root.cpuHist : null
+    function popupShown(id) {
+        switch (id) {
+        case "cpu":  return popupCpu
+        case "ram":  return popupMemory
+        case "temp": return popupTempAvg || popupTempMax || popupCores
+        case "freq": return popupFreq
+        case "net":  return popupNet
+        case "bat":  return popupBatShown
+        case "fan":  return popupFanShown
         }
+        return false
+    }
+    function anyPopupShown() {
+        for (var i = 0; i < statOrder.length; ++i) if (popupShown(statOrder[i])) return true
+        return false
+    }
 
-        PlasmaComponents.Label { visible: root.popupMemory; text: "Memory" }
-        PlasmaComponents.Label {
-            visible: root.popupMemory
-            text: root.gib(memUsed.value) + " / " + root.gib(memTotal.value)
-                  + " (" + root.pct(memPercent.value) + ")"
-            font.bold: true
+    // One row: a name, then a bold value.
+    component PopupRow: RowLayout {
+        id: popupRow
+        property string name
+        property string value
+        property color valueColor: Kirigami.Theme.textColor
+        spacing: Kirigami.Units.largeSpacing
+        PlasmaComponents.Label { text: popupRow.name; Layout.preferredWidth: root.popupLabelWidth }
+        PlasmaComponents.Label { text: popupRow.value; font.bold: true; color: popupRow.valueColor }
+    }
+    // A graph under a stat's rows.
+    component PopupGraph: Spark {
+        Layout.fillWidth: true
+        Layout.preferredHeight: Kirigami.Units.gridUnit * 2
+    }
+
+    function popupBlock(id) {
+        switch (id) {
+        case "cpu":  return cpuBlock
+        case "ram":  return ramBlock
+        case "temp": return tempBlock
+        case "freq": return freqBlock
+        case "net":  return netBlock
+        case "bat":  return batBlock
+        case "fan":  return fanBlock
         }
+        return null
+    }
 
-        Spark {
-            visible: root.gdRam && root.popupMemory && root.ramHist !== null
-            Layout.columnSpan: 2
-            Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.gdRam && root.popupMemory) ? root.ramHist : null
-        }
-
-        PlasmaComponents.Label { visible: root.popupFreq; text: "CPU frequency" }
-        PlasmaComponents.Label { visible: root.popupFreq; text: root.freq(freqAvg.value); font.bold: true }
-
-        PlasmaComponents.Label { visible: root.popupFreq; text: "Min / max" }
-        PlasmaComponents.Label {
-            visible: root.popupFreq
-            text: root.ghzNumber(freqMin.value) + " / " + root.ghzNumber(freqMax.value) + " GHz"
-            font.bold: true
-        }
-
-        Spark {
-            visible: root.gdFreq && root.popupFreq && root.freqHist !== null
-            Layout.columnSpan: 2
-            Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.gdFreq && root.popupFreq) ? root.freqHist : null
-            yTo: root.freqPeak
-        }
-
-        PlasmaComponents.Label { visible: root.popupNet; text: "Download" }
-        PlasmaComponents.Label {
-            visible: root.popupNet
-            text: root.rate(netDown.value) + "  (" + root.bytesText(netDownTotal.value) + " total)"
-            font.bold: true
-        }
-
-        PlasmaComponents.Label { visible: root.popupNet; text: "Upload" }
-        PlasmaComponents.Label {
-            visible: root.popupNet
-            text: root.rate(netUp.value) + "  (" + root.bytesText(netUpTotal.value) + " total)"
-            font.bold: true
-        }
-
-        Spark {
-            visible: root.gdNet && root.popupNet && root.netDownHist !== null
-            Layout.columnSpan: 2
-            Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.gdNet && root.popupNet) ? root.netDownHist : null
-            history2: (root.gdNet && root.popupNet) ? root.netUpHist : null
-            yTo: root.netPeak
-        }
-
-        PlasmaComponents.Label { visible: root.popupBatShown; text: "Battery" }
-        PlasmaComponents.Label {
-            visible: root.popupBatShown
-            text: root.batText() + (root.isNum(root.batEnergyTotal()) ? "  (" + root.wh(root.batEnergyTotal()) + ")" : "")
-            font.bold: true
-            color: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-        }
-
-        // One line per battery, only when "each battery separately" is chosen.
-        Repeater {
-            model: (root.popupBatShown && root.batSeparate && root.batterySources.length > 1) ? root.batterySources : []
-            delegate: PlasmaComponents.Label {
-                required property var modelData
-                readonly property var d: root.batteryData(modelData)
-                Layout.columnSpan: 2
-                Layout.leftMargin: Kirigami.Units.gridUnit
-                opacity: 0.85
-                text: (d["Pretty Name"] ? d["Pretty Name"] : modelData) + ":  " + root.pct(d["Percent"])
-                      + "  (" + root.wh(d["Energy"]) + ")  ·  health " + root.pct(d["Capacity"])
-                      + (d["State"] === "Charging" ? "  ↑" : (d["State"] === "Discharging" ? "  ↓" : ""))
+    Component {
+        id: cpuBlock
+        ColumnLayout {
+            PopupRow { name: "CPU usage"; value: root.pct(cpuUsage.value) }
+            PopupGraph {
+                visible: root.gdCpu && root.cpuHist !== null
+                history: root.gdCpu ? root.cpuHist : null
             }
         }
-
-        PlasmaComponents.Label { visible: root.popupBatShown && root.batState !== 0; text: root.batState > 0 ? "Charging" : "Discharging" }
-        PlasmaComponents.Label {
-            visible: root.popupBatShown && root.batState !== 0
-            text: root.batTimeText() !== "" ? root.batTimeText() + (root.batState > 0 ? " to full" : " left") : "estimating…"
-            font.bold: true
-        }
-
-        Spark {
-            visible: root.gdBat && root.popupBatShown && root.batHist !== null
-            Layout.columnSpan: 2
-            Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.gdBat && root.popupBatShown) ? root.batHist : null
-            lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
-        }
-
-        PlasmaComponents.Label { visible: root.popupFanShown; text: "Fan" }
-        RowLayout {
-            visible: root.popupFanShown
-            spacing: Kirigami.Units.smallSpacing
-            FanIcon {
-                level: root.fanLevel
-                animate: root.fanAnimate
+    }
+    Component {
+        id: ramBlock
+        ColumnLayout {
+            PopupRow {
+                name: "Memory"
+                value: root.gib(memUsed.value) + " / " + root.gib(memTotal.value) + " (" + root.pct(memPercent.value) + ")"
             }
-            PlasmaComponents.Label { text: root.rpmText(root.fanRpm); font.bold: true }
+            PopupGraph {
+                visible: root.gdRam && root.ramHist !== null
+                history: root.gdRam ? root.ramHist : null
+            }
         }
-
-        Spark {
-            visible: root.gdFan && root.popupFanShown && root.fanHist !== null
-            Layout.columnSpan: 2
-            Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.gdFan && root.popupFanShown) ? root.fanHist : null
-            yTo: root.fanPeak
+    }
+    Component {
+        id: freqBlock
+        ColumnLayout {
+            PopupRow { name: "CPU frequency"; value: root.freq(freqAvg.value) }
+            PopupRow { name: "Min / max"; value: root.ghzNumber(freqMin.value) + " / " + root.ghzNumber(freqMax.value) + " GHz" }
+            PopupGraph {
+                visible: root.gdFreq && root.freqHist !== null
+                history: root.gdFreq ? root.freqHist : null
+                yTo: root.freqPeak
+            }
         }
-
-        PlasmaComponents.Label { visible: root.popupTempAvg; text: "CPU temp (avg)" }
-        PlasmaComponents.Label {
-            visible: root.popupTempAvg
-            text: root.temp(tempAvg.value)
-            font.bold: true
-            color: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+    }
+    Component {
+        id: netBlock
+        ColumnLayout {
+            PopupRow { name: "Download"; value: root.rate(netDown.value) + "  (" + root.bytesText(netDownTotal.value) + " total)" }
+            PopupRow { name: "Upload"; value: root.rate(netUp.value) + "  (" + root.bytesText(netUpTotal.value) + " total)" }
+            PopupGraph {
+                visible: root.gdNet && root.netDownHist !== null
+                history: root.gdNet ? root.netDownHist : null
+                history2: root.gdNet ? root.netUpHist : null
+                yTo: root.netPeak
+            }
         }
-
-        Spark {
-            visible: root.gdTemp && root.popupTempAvg && root.tempHist !== null
-            Layout.columnSpan: 2
-            Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.gdTemp && root.popupTempAvg) ? root.tempHist : null
-            yFrom: root.tempYMin
-            yTo: root.tempYMax
-            lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
-        }
-
-        PlasmaComponents.Label { visible: root.popupTempMax; text: "CPU temp (max core)" }
-        PlasmaComponents.Label {
-            visible: root.popupTempMax
-            text: root.temp(tempMax.value)
-            font.bold: true
-            color: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-        }
-
-        // ---- per-core temperatures ----
-        // Sensors are created per delegate, so they only exist while the popup is open.
-        // Threads of one physical core (hyperthreading) report the same temperature.
-        PlasmaComponents.Label {
-            visible: root.popupCores && perCore.count > 0
-            Layout.columnSpan: 2
-            Layout.topMargin: Kirigami.Units.smallSpacing
-            text: "Per core"
-            font.bold: true
-        }
-
-        GridLayout {
-            visible: root.popupCores && perCore.count > 0
-            Layout.columnSpan: 2
-            Layout.fillWidth: true
-            columns: 2
-            columnSpacing: Kirigami.Units.gridUnit * 2
-            rowSpacing: 0
-
+    }
+    Component {
+        id: batBlock
+        ColumnLayout {
+            PopupRow {
+                name: "Battery"
+                value: root.batText() + (root.isNum(root.batEnergyTotal()) ? "  (" + root.wh(root.batEnergyTotal()) + ")" : "")
+                valueColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+            }
+            // One line per battery, only when "each battery separately" is chosen.
             Repeater {
-                id: perCore
-                model: root.popupCores && root.isNum(coreCount.value) ? Number(coreCount.value) : 0
-
-                delegate: RowLayout {
-                    id: coreRow
-                    required property int index
-                    Layout.fillWidth: true
-
-                    Sensors.Sensor {
-                        id: coreTemp
-                        sensorId: "cpu/cpu" + coreRow.index + "/temperature"
-                        updateRateLimit: root.refreshMs
+                model: (root.batSeparate && root.batterySources.length > 1) ? root.batterySources : []
+                delegate: PlasmaComponents.Label {
+                    required property var modelData
+                    readonly property var d: root.batteryData(modelData)
+                    Layout.leftMargin: Kirigami.Units.gridUnit
+                    opacity: 0.85
+                    text: (d["Pretty Name"] ? d["Pretty Name"] : modelData) + ":  " + root.pct(d["Percent"])
+                          + "  (" + root.wh(d["Energy"]) + ")  ·  health " + root.pct(d["Capacity"])
+                          + (d["State"] === "Charging" ? "  ↑" : (d["State"] === "Discharging" ? "  ↓" : ""))
+                }
+            }
+            PopupRow {
+                visible: root.batState !== 0
+                name: root.batState > 0 ? "Charging" : "Discharging"
+                value: root.batTimeText() !== "" ? root.batTimeText() + (root.batState > 0 ? " to full" : " left") : "estimating…"
+            }
+            PopupGraph {
+                visible: root.gdBat && root.batHist !== null
+                history: root.gdBat ? root.batHist : null
+                lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
+            }
+        }
+    }
+    Component {
+        id: fanBlock
+        ColumnLayout {
+            RowLayout {
+                spacing: Kirigami.Units.largeSpacing
+                PlasmaComponents.Label { text: "Fan"; Layout.preferredWidth: root.popupLabelWidth }
+                RowLayout {
+                    spacing: Kirigami.Units.smallSpacing
+                    FanIcon {
+                        level: root.fanLevel
+                        animate: root.fanAnimate
                     }
-                    readonly property bool hot: root.isNum(coreTemp.value) && coreTemp.value >= root.warnTempC
+                    PlasmaComponents.Label { text: root.rpmText(root.fanRpm); font.bold: true }
+                }
+            }
+            PopupGraph {
+                visible: root.gdFan && root.fanHist !== null
+                history: root.gdFan ? root.fanHist : null
+                yTo: root.fanPeak
+            }
+        }
+    }
+    Component {
+        id: tempBlock
+        ColumnLayout {
+            PopupRow {
+                visible: root.popupTempAvg
+                name: "CPU temp (avg)"
+                value: root.temp(tempAvg.value)
+                valueColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+            }
+            PopupGraph {
+                visible: root.gdTemp && root.popupTempAvg && root.tempHist !== null
+                history: (root.gdTemp && root.popupTempAvg) ? root.tempHist : null
+                yFrom: root.tempYMin
+                yTo: root.tempYMax
+                lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
+            }
+            PopupRow {
+                visible: root.popupTempMax
+                name: "CPU temp (max core)"
+                value: root.temp(tempMax.value)
+                valueColor: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+            }
 
-                    PlasmaComponents.Label {
-                        text: "Core " + (coreRow.index + 1)
+            // ---- per-core temperatures ----
+            // Sensors are created per delegate, so they only exist while the popup is open.
+            // Threads of one physical core (hyperthreading) report the same temperature.
+            PlasmaComponents.Label {
+                visible: root.popupCores && perCore.count > 0
+                Layout.topMargin: Kirigami.Units.smallSpacing
+                text: "Per core"
+                font.bold: true
+            }
+            GridLayout {
+                visible: root.popupCores && perCore.count > 0
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: Kirigami.Units.gridUnit * 2
+                rowSpacing: 0
+
+                Repeater {
+                    id: perCore
+                    model: root.popupCores && root.isNum(coreCount.value) ? Number(coreCount.value) : 0
+
+                    delegate: RowLayout {
+                        id: coreRow
+                        required property int index
                         Layout.fillWidth: true
-                    }
-                    PlasmaComponents.Label {
-                        text: root.temp(coreTemp.value)
-                        font.bold: true
-                        color: coreRow.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+
+                        Sensors.Sensor {
+                            id: coreTemp
+                            sensorId: "cpu/cpu" + coreRow.index + "/temperature"
+                            updateRateLimit: root.refreshMs
+                        }
+                        readonly property bool hot: root.isNum(coreTemp.value) && coreTemp.value >= root.warnTempC
+
+                        PlasmaComponents.Label {
+                            text: "Core " + (coreRow.index + 1)
+                            Layout.fillWidth: true
+                        }
+                        PlasmaComponents.Label {
+                            text: root.temp(coreTemp.value)
+                            font.bold: true
+                            color: coreRow.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                        }
                     }
                 }
             }
         }
+    }
+
+    fullRepresentation: ColumnLayout {
+        Layout.minimumWidth: Kirigami.Units.gridUnit * 14
+
+        Repeater {
+            model: root.statOrder
+            delegate: Loader {
+                required property string modelData
+                Layout.fillWidth: true
+                active: root.popupShown(modelData)
+                visible: active
+                sourceComponent: root.popupBlock(modelData)
+            }
+        }
 
         PlasmaComponents.Label {
-            visible: !root.popupCpu && !root.popupMemory && !root.popupTempAvg
-                     && !root.popupTempMax && !root.popupCores && !root.popupFreq && !root.popupNet
-                     && !root.popupBatShown && !root.popupFanShown
-            Layout.columnSpan: 2
+            visible: !root.anyPopupShown()
             text: "Nothing to show. Enable items under Configure > Metrics."
             opacity: 0.7
         }
