@@ -173,6 +173,16 @@ equal("a partial order is completed", p["apply"], {"statOrder": "net,cpu,ram,tem
 p = plan({"cpu_show": "  "})
 check("whitespace counts as absent", "cpu_show" in p["fill"])
 
+# ---- how the widget uses it ----
+SF = open(os.path.join(UI, "SettingsFile.qml"), encoding="utf-8").read()
+MAIN = open(os.path.join(UI, "main.qml"), encoding="utf-8").read()
+check("main.qml loads the settings file", re.search(r"^\s*SettingsFile \{ \}", MAIN, re.M) is not None)
+check("one watcher per schema entry writes changes", "model: file.schema" in SF and "Plasmoid.configuration[modelData.cfg]" in SF
+      and "C.toIni(" in SF)
+check("the startup read waits for the parent to complete", "Component.onCompleted: Qt.callLater(start)" in SF)
+check("startup applies the file through the plan", "C.plan(" in SF and "Plasmoid.configuration[key] = plan.apply[key]" in SF)
+check("nothing polls the file", "Timer" not in SF and "FileSystemWatcher" not in SF)
+
 # ---- 3. a real round trip through QtCore.Settings ----
 # The QML below plays main.qml's part (open one Settings per section, plan, fill, write one key) and reports to
 # the Python side, which edits and reads the file in between.

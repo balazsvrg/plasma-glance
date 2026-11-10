@@ -35,6 +35,9 @@ PlasmoidItem {
         if (c[key] !== value) c[key] = value
     }
 
+    // ~/.config/glancerc: read at startup, written on every settings change (see SettingsFile.qml).
+    SettingsFile { }
+
     // ---- graph scale peaks ----
     // A graph scale that follows the data (registry: scale.mode, i.e. frequency, network and fan) needs a peak that
     // outlives the individual values. The peak is state, so it lives here: `peaks` maps a stat id to its current
