@@ -3,9 +3,10 @@
 // Metrics registry: one declarative entry per stat, plus the pure helpers that turn an entry's
 // templates into panel / popup text.
 //
-// STATUS: main.qml takes its panel text (statText, verticalLines) and its horizontal width reserves from
-// this file; the rest of a descriptor (keys, sensors, scale, alert, popup rows) is not used by the widget
-// yet and is checked against it by tests/metrics_test.py. This is a .pragma library: the functions are pure
+// STATUS: main.qml takes its panel text (statText, verticalLines), its horizontal width reserves, its alerts,
+// its graph scales and its graph histories (one per series) from this file; the rest of a descriptor (keys
+// other than the graph flags, sensors, popup rows) is not used by the widget yet and is checked against it by
+// tests/metrics_test.py. This is a .pragma library: the functions are pure
 // and see no QML properties, so the caller passes every setting in through ctx and every value through vals.
 //
 // Descriptor fields (a field is present only when the stat needs it):
@@ -21,10 +22,13 @@
 //             (verticalCompact only where the vertical panel may shorten the value, see statCompact);
 //             sample / verticalSample: the widest value set (width reserve); sampleBits: net in bits mode;
 //             reserveCtx: settings overridden when the horizontal reserve is rendered (net: bytes)
-//   scale     graph scale: { from, to } fixed, { from, to: function(ctx) }, or
-//             { from, mode: "peak" | "decay", floor, decay } (a scale that follows the data)
+//   scale     graph scale: { from, to } fixed, { from, to: function(ctx) }, or a scale that follows the data:
+//             { from, mode: "peak" | "decay", floor, decay, observe, needsGraph } where
+//               observe     { keys, combine, barCombine }: the vals keys the scale watches (combine "max" or
+//                           "sum" when there are several; barCombine replaces combine when bars are drawn)
+//               needsGraph  true: the scale is only followed while a graph of the stat is enabled
 //   alert     function(vals, ctx) -> bool: the panel text turns red
-//   series    keys of vals drawn as graph series ([value] or [down, up])
+//   series    keys of vals drawn as graph series ([value] or [down, up]): one history per series
 //   popup     rows: [{ label, value, when, alert }], graph: bool, hooks: names of bespoke parts
 // Template syntax: "{key:format}" (see FORMATS); any other text is copied as is.
 
@@ -197,7 +201,7 @@ var METRICS = [
             sample: { value: 9900 }                // 9.9 GHz
         },
         // The hardware maximum is not a sensor: the scale grows to the highest "max" seen, never below 1 GHz.
-        scale: { from: 0, mode: "peak", floor: 1000, observe: "max" },
+        scale: { from: 0, mode: "peak", floor: 1000, observe: { keys: ["max"] } },
         series: ["value"],
         popup: {
             rows: [
@@ -230,9 +234,14 @@ var METRICS = [
             reserveCtx: { netBits: false },
             sampleBits: { down: 999e6 / 8, up: 999e6 / 8 }
         },
-        // Rises at once to the highest rate, decays 1% per second of real time, never below 100 KB/s.
-        // Bar graphs stack download and upload, so they observe the sum; the line graph the higher one.
-        scale: { from: 0, mode: "decay", floor: 100000, decay: 0.99, observe: "down,up" },
+        // Rises at once to the highest rate, decays 1% per second, never below 100 KB/s. The decay is applied once
+        // per sensor update with the refresh interval as the elapsed time (dtMs of nextPeak). Bar graphs stack
+        // download and upload, so they observe the sum; the line graph the higher one. Only followed while a
+        // net graph is enabled.
+        scale: {
+            from: 0, mode: "decay", floor: 100000, decay: 0.99, needsGraph: true,
+            observe: { keys: ["down", "up"], combine: "max", barCombine: "sum" }
+        },
         series: ["down", "up"],
         popup: {
             rows: [
@@ -303,7 +312,7 @@ var METRICS = [
             decoration: "fanIcon"                 // spinning icon before the text (and its width in the reserve)
         },
         // Grows to the highest RPM seen, never below 3000.
-        scale: { from: 0, mode: "peak", floor: 3000, observe: "value" },
+        scale: { from: 0, mode: "peak", floor: 3000, observe: { keys: ["value"] } },
         series: ["value"],
         popup: {
             rows: [{ label: "Fan", value: "{value:rpm} RPM", decoration: "fanIcon" }],
@@ -341,18 +350,52 @@ function panelText(m, compact, vertical, vals, ctx) {
     return render(compact ? m.panel.compact : m.panel.full, vals, ctx)
 }
 
-// ---- graph scale ----
+// ---- graph scale and alert ----
+// The lower end of the scale.
+function scaleFrom(m) {
+    return m.scale.from
+}
 // The upper end of the scale for a fixed or computed scale.
 function scaleTo(m, ctx) {
     var s = m.scale
     return typeof s.to === "function" ? s.to(ctx) : s.to
 }
-// One step of a following scale ("peak" never falls, "decay" falls by `decay` per second of real time).
-// `observed` is the value just seen (undefined or non-numeric: nothing seen).
-function nextPeak(scale, prev, observed, refreshMs) {
+// Whether the scale follows the data (its upper end is a peak kept by the caller, see stepPeak).
+function followsData(m) {
+    return !!m.scale.mode
+}
+// The upper end of any scale: a following scale ends at the caller's current `peak`.
+function scaleEnd(m, ctx, peak) {
+    return followsData(m) ? peak : scaleTo(m, ctx)
+}
+// The value a following scale watches, from the live vals: the numeric ones of scale.observe.keys (a missing or
+// non-numeric one counts as 0), combined by the max or the sum (ctx.barChart picks barCombine when there is one).
+function observed(scale, vals, ctx) {
+    var o = scale.observe, how = ctx && ctx.barChart && o.barCombine ? o.barCombine : (o.combine || "max"), acc = 0
+    for (var i = 0; i < o.keys.length; ++i) {
+        var v = vals ? vals[o.keys[i]] : undefined
+        v = isNum(v) ? Number(v) : 0
+        acc = how === "sum" ? acc + v : Math.max(acc, v)
+    }
+    return acc
+}
+// One step of a following scale ("peak" never falls, "decay" falls by `decay` per second). `observed` is the
+// value just seen (undefined or non-numeric: nothing seen); `dtMs` is the time that passed since the previous step.
+function nextPeak(scale, prev, observed, dtMs) {
     var seen = isNum(observed) ? Number(observed) : 0
-    var p = scale.mode === "decay" ? prev * Math.pow(scale.decay, refreshMs / 1000) : prev
+    var p = scale.mode === "decay" ? prev * Math.pow(scale.decay, dtMs / 1000) : prev
     return Math.max(scale.floor, seen, p)
+}
+// The caller's peak after a sensor update: `prev` when the stat's graph is not enabled and the scale needs one
+// (ctx.graphOn), otherwise nextPeak of what the scale watches. ctx also carries barChart. The peak itself is
+// state of the caller (main.qml keeps it per stat); this function is pure.
+function stepPeak(m, prev, vals, ctx, dtMs) {
+    if (m.scale.needsGraph && !(ctx && ctx.graphOn)) return prev
+    return nextPeak(m.scale, prev, observed(m.scale, vals, ctx), dtMs)
+}
+// Whether the stat's panel text (and graph colour) is in its alert state.
+function alertOf(m, vals, ctx) {
+    return !!m.alert && !!m.alert(vals, ctx)
 }
 
 // ---- sensor gating ----

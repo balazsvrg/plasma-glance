@@ -330,7 +330,9 @@ for what, snippet in (("temp scale start", "tempYMin: 20"), ("temp scale end", "
                       ("fan attempts", "readonly property int maxAttempts: 10"), ("fan first scan", "interval: 800"),
                       ("fan retry", "fanScan.interval = 3000")):
     check("main.qml still says: %s" % what, snippet in MAIN_QML)
-equal("registry net scale", run(M, "byId('net').scale"), {"from": 0, "mode": "decay", "floor": 100000, "decay": 0.99, "observe": "down,up"})
+equal("registry net scale", run(M, "byId('net').scale"),
+      {"from": 0, "mode": "decay", "floor": 100000, "decay": 0.99, "needsGraph": True,
+       "observe": {"keys": ["down", "up"], "combine": "max", "barCombine": "sum"}})
 equal("registry fan source numbers", run(M, "[byId('fan').source.firstScanMs,byId('fan').source.retryMs,byId('fan').source.maxAttempts]"), [800, 3000, 10])
 equal("registry battery interval", run(M, "byId('bat').source.intervalMs"), 5000)
 
@@ -406,8 +408,8 @@ print("6. registry against the golden alerts, scales and peaks (tests/golden/sca
 SC = json.load(open(os.path.join(ROOT, "tests", "golden", "scales.json"), encoding="utf-8"))
 STATS = run(M, "DEFAULT_ORDER")
 compared = 0
-M.evaluate("function alertOf(id, vals, warn) { var m = byId(id); return !!(m && m.alert && m.alert(vals, { warnTempC: warn })) }")
-M.evaluate("function alerting(vals, warn) { return DEFAULT_ORDER.filter(function (id) { return alertOf(id, vals, warn) }) }")
+M.evaluate("function alertById(id, vals, warn) { return alertOf(byId(id), vals, { warnTempC: warn }) }")
+M.evaluate("function alerting(vals, warn) { return DEFAULT_ORDER.filter(function (id) { return alertById(id, vals, warn) }) }")
 
 
 def jsarr(rows):
@@ -416,7 +418,7 @@ def jsarr(rows):
 
 # Temperature. avgHot is the temp alert; tempHot is the popup's "max core" row alert.
 temp_in = jsarr([[r[0], r[1]] for r in SC["temp"]])
-got = run(M, "%s.map(function(r){var w=r[0],v=r[1];return [alertOf('temp',{value:v},w),byId('temp').popup.rows[1].alert({max:v},{warnTempC:w})]})" % temp_in)
+got = run(M, "%s.map(function(r){var w=r[0],v=r[1];return [alertById('temp',{value:v},w),byId('temp').popup.rows[1].alert({max:v},{warnTempC:w})]})" % temp_in)
 equal("avgHot / tempHot over warn x value", got, [[r[2], r[3]] for r in SC["temp"]])
 got = run(M, "%s.map(function(r){var w=r[0],v=r[1];return alerting({value:v},w)})" % temp_in)
 equal("the alerting stats over warn x value", got, [r[4] for r in SC["temp"]])
@@ -429,7 +431,7 @@ equal("temp text / line colour follow the alert",
 
 # Battery.
 bat_in = jsarr([[r[0], r[1]] for r in SC["bat"]])
-got = run(M, "%s.map(function(r){return [alertOf('bat',{percent:r[0],state:r[1]},80),alerting({percent:r[0],state:r[1]},80)]})" % bat_in)
+got = run(M, "%s.map(function(r){return [alertById('bat',{percent:r[0],state:r[1]},80),alerting({percent:r[0],state:r[1]},80)]})" % bat_in)
 equal("batLow over percent x state", [g[0] for g in got], [r[2] for r in SC["bat"]])
 equal("the alerting stats over percent x state", [g[1] for g in got], [r[3] for r in SC["bat"]])
 equal("bat colours follow the alert", [[want_color(r[2], "TEXT"), want_color(r[2], "HIGHLIGHT")] for r in SC["bat"]],
@@ -443,39 +445,31 @@ for t, p, st, per in SC["all"]:
     compared += len(STATS)
     equal("alerts and colours of every stat (temp=%s bat=%s/%d)" % (t, p, st), got, per)
 
-# Scale range of every stat.
+# Scale range of every stat: from scaleFrom, to scaleEnd (a following scale ends at the caller's peak).
+RANGE = "(function(id,w,peak){var m=byId(id);return [scaleFrom(m),scaleEnd(m,{warnTempC:w},peak)]})"
 for warn, per in SC["range by warn"]:
-    got = {x: [run(M, "byId('%s').scale.from" % x), run(M, "scaleTo(byId('%s'),{warnTempC:%r})" % (x, warn)) if x not in ("freq", "net", "fan") else "peak"]
-           for x in STATS}
-    want = {x: [v[0], v[1] if x not in ("freq", "net", "fan") else "peak"] for x, v in per.items()}
+    got = {x: run(M, "%s('%s',%r,byId('%s').scale.floor)" % (RANGE, x, warn, x)) for x in STATS}
     compared += len(STATS)
-    equal("scale range at warn %r" % warn, got, want)
+    equal("scale range at warn %r (peaks at their start)" % warn, got, per)
 for peaks, per in SC["range by peak"]:
-    got = {x: run(M, "byId('%s').scale.from" % x) for x in STATS}
-    equal("scale start at peaks %r" % peaks, got, {x: v[0] for x, v in per.items()})
-    # a following scale ends at its peak
-    equal("a following scale is the peak (freq, net, fan) at %r" % peaks,
-          [per["freq"][1], per["net"][1], per["fan"][1]], peaks)
+    pk = dict(zip(("freq", "net", "fan"), peaks))
+    got = {x: run(M, "%s('%s',80,%r)" % (RANGE, x, pk.get(x, 0))) for x in STATS}
     compared += len(STATS)
+    equal("scale range at peaks %r" % peaks, got, per)
+equal("the following scales are exactly freq, net and fan", run(M, "METRICS.filter(followsData).map(function(m){return m.id})"), ["freq", "net", "fan"])
 
 # Peak sequences.
-def jsval(v):
-    return v
-
-
 def peak_run(stat, steps, bar=False, graph=True):
     """The registry's scale stepped through `steps` the way main.qml's handlers do it."""
-    sc = "byId('%s').scale" % stat
-    out, prev = [], run(M, "%s.floor" % sc)
+    out, prev = [], run(M, "byId('%s').scale.floor" % stat)
     for step in steps:
         if stat == "net":
             d, u, ms = step
-            # the net scale only follows the data while a graph needs it; bars stack download and upload
-            if graph:
-                seen = ("(isNum(%s)?Number(%s):0)+(isNum(%s)?Number(%s):0)" if bar else "Math.max(isNum(%s)?Number(%s):0,isNum(%s)?Number(%s):0)") % (d, d, u, u)
-                prev = run(M, "nextPeak(%s,%r,%s,%d)" % (sc, prev, seen, ms))
+            vals, dt = "{down:%s,up:%s}" % (d, u), ms
         else:
-            prev = run(M, "nextPeak(%s,%r,%s,1000)" % (sc, prev, step))
+            vals, dt = "{%s:%s}" % ("max" if stat == "freq" else "value", step), 1000
+        prev = run(M, "stepPeak(byId('%s'),%r,%s,{barChart:%s,graphOn:%s},%d)" % (
+            stat, prev, vals, str(bar).lower(), str(graph).lower(), dt))
         out.append(prev)
     return out
 
