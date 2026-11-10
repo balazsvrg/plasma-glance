@@ -655,6 +655,15 @@ PlasmoidItem {
     property bool adjusting: false           // handle visible
     property bool dragging: false            // handle being dragged
     property real dragLength: 0              // strip length under the mouse, px
+    // Which edge carries the handle: the edge that is free to move. A widget in the far half of the
+    // panel (right half, or bottom half when vertical) is packed toward the end, so the strip grows
+    // toward the start and the handle sits on the left (top) edge. Otherwise it sits on the right (bottom).
+    property bool handleAtStart: false
+    // Strip length for a pointer at `pos`, given where the drag started. With the handle on the
+    // start edge, moving the pointer toward the start makes the strip longer, so the sign flips.
+    function dragTo(startLength, startPos, pos) {
+        dragLength = startLength + (handleAtStart ? -1 : 1) * (pos - startPos)
+    }
     function dragMax() {
         var v = Math.max(20, Math.round(dragLength / 5) * 5)                 // snap to 5 px
         return v >= stripLength(0, 0) ? 0 : v
@@ -704,6 +713,24 @@ PlasmoidItem {
         onClicked: root.expanded = !root.expanded
 
         readonly property bool vertical: root.vertical
+
+        // Decide which edge gets the drag handle from where this widget sits in the panel.
+        function updateHandleSide() {
+            if (root.dragging) return                       // never flip in the middle of a drag
+            var win = compact.Window.window
+            if (!win) return
+            var c = compact.mapToItem(null, compact.width / 2, compact.height / 2)
+            root.handleAtStart = vertical ? c.y > win.height / 2 : c.x > win.width / 2
+        }
+        onXChanged: updateHandleSide()
+        onYChanged: updateHandleSide()
+        onWidthChanged: updateHandleSide()
+        onHeightChanged: updateHandleSide()
+        Component.onCompleted: updateHandleSide()
+        Connections {
+            target: root
+            function onAdjustingChanged() { compact.updateHandleSide() }
+        }
 
         Layout.minimumWidth: vertical ? 0 : layout.implicitWidth
         Layout.minimumHeight: layout.implicitHeight
@@ -895,8 +922,8 @@ PlasmoidItem {
             id: handle
             visible: root.adjusting
             z: 50
-            x: compact.vertical ? 0 : compact.width - width
-            y: compact.vertical ? compact.height - height : 0
+            x: compact.vertical ? 0 : (root.handleAtStart ? 0 : compact.width - width)
+            y: compact.vertical ? (root.handleAtStart ? 0 : compact.height - height) : 0
             width: compact.vertical ? compact.width : Kirigami.Units.smallSpacing * 2
             height: compact.vertical ? Kirigami.Units.smallSpacing * 2 : compact.height
             color: Kirigami.Theme.highlightColor
@@ -930,7 +957,7 @@ PlasmoidItem {
                     root.dragging = true
                 }
                 onPositionChanged: function (mouse) {
-                    if (pressed) root.dragLength = startLength + (pointerPos(mouse) - startPos)
+                    if (pressed) root.dragTo(startLength, startPos, pointerPos(mouse))
                 }
                 onReleased: root.finishDrag()
                 onCanceled: root.finishDrag()
