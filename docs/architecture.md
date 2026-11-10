@@ -38,18 +38,21 @@ package/
   contents/ui/configMetrics.qml  settings page: the stat table (show/graph, order), fan/battery options
   contents/ui/configGraphs.qml   settings page: panel graph style, chart style, history length
   contents/ui/LengthNotice.qml   warning banner shown on the General and Metrics pages
-  contents/ui/Metrics.js         registry that describes each stat as data (not yet used by the widget)
+  contents/ui/Metrics.js         registry that describes each stat as data; panel text and width reserves come from it
 install.sh / uninstall.sh        kpackagetool6 wrappers (install or upgrade for the current user)
 package.sh                       zips metadata.json + contents/ into dist/<id>-<version>.plasmoid
-tests/metrics_test.py            checks the registry against main.qml (python3 + PySide6, no Plasma needed)
+tests/metrics_test.py            checks the registry and its use in main.qml (python3 + PySide6, no Plasma needed)
+tests/golden/                    the panel text of release v0.9.1 (panel_text.json) and the script that generated it
 ```
 
 `contents/ui/Metrics.js` is a registry that describes each stat as data: its labels, settings keys and
 defaults, sensors and when they are polled, panel text templates (full, compact, vertical), worst-case
 samples, graph scale, alert rule and popup rows, plus the pure formatting helpers that render those templates.
-The widget does not use it yet: `main.qml` and the settings pages still carry their own copies of all of this.
-`tests/metrics_test.py` checks that the registry reproduces today's strings, formats and key names exactly.
-It is intended to replace the per-stat switches and lists that section 14 enumerates.
+`main.qml` takes its panel text and its horizontal width reserves from it (section 4); the settings pages, the
+alert rules, the graph scales, the sensors and the popup rows still carry their own copies of the rest, which
+the registry also describes and the tests compare with the code (section 14 lists what a new stat still needs).
+`tests/metrics_test.py` checks the registry against the golden data in `tests/golden/`, which holds the exact
+text the hand-written code of v0.9.1 produced, and checks how `main.qml` feeds it.
 
 `metadata.json` keeps the plugin id `org.local.cpumemtemp` although the visible name is "Glance"; Plasma stores
 the applet's settings under the id, so renaming it would reset them.
@@ -87,9 +90,9 @@ frequency, network and fan, and Plasma's `powermanagement` data engine for the b
         |        -> Repeater of Sensors -> fanItems     |
         |        -> fanRpmMax() -> fanRpm, fanLevel     |
         v                                               v
-   statValue(id, sample) ----------------------------- (bat, fan read their own values)
+   statVals(id) -------------------------------------- (the live values a stat's templates read)
         |
-        +--> valueText(id, compact, sample) / netLines(sample)
+        +--> M.panelText(registry entry, compact, vertical, vals, textCtx)    (Metrics.js)
         |         |
         |         v
         |    statText(id, compact, vertical) --> MetricCell Label (panel)
@@ -104,7 +107,8 @@ frequency, network and fan, and Plasma's `powermanagement` data engine for the b
                   +--> PopupGraph { statId } in a popup block
 
  Popup rows (PopupRow) do NOT use statText: they call the format helpers directly
- (pct, gib, freq, ghzNumber, rate, bytesText, temp, wh, batText, rpmText ...) on the sensor values.
+ (pct, gib, freq, ghzNumber, rate, bytesText, temp, wh, rpmText, batRowText) on the sensor values. They are
+ thin wrappers over `M.FORMATS` in `Metrics.js`, the same formatters the panel templates use.
 ```
 
 The formatting helpers (`pct`, `temp`, `gib`, `rate`, `freq`, ...) test values with `isNum(v)`, which rejects `undefined`, `null`, `""` and `NaN`, so a
@@ -129,8 +133,9 @@ the row order in the settings table.
   is missing. So a stat added in a later version appears at the end for existing users without migration.
 - Per-stat predicates and helpers are `switch (id)` functions keyed by the stat id: `statShown`,
   `statGraph` (panel graph flag), `statPopupGraph` (popup graph flag), `popupShown`, `statHistory`,
-  `statHistory2`, `statYFrom`, `statYTo`, `statAlert`, `statTextColor`, `statLineColor`, `reservedWidth`,
-  `verticalCaption`, `statValue`, `valueText`, `statText`, `popupBlock`.
+  `statHistory2`, `statYFrom`, `statYTo`, `statAlert`, `statTextColor`, `statLineColor`, `statVals` (the live
+  values the registry's templates read) and `popupBlock`. Panel text, captions, samples and width reserves are
+  not among them any more: they are looked up in the registry by id (section 4).
 - `shownIds()` is `statOrder` filtered by `statShown`. For `bat` and `fan`, "shown" also needs the hardware
   (`batShown = showBat && hasBattery`, `fanShown = showFan && hasFan`).
 
@@ -186,62 +191,80 @@ maximum length dropped from the strip. Do not hard-code stat names or order anyw
 
 ## 4. The text pipeline and the width pipeline
 
-There is exactly one function that produces panel text and a small set that measures it. The maximum-length
-calculation (`stripLength`, `computeFit`) and the on-screen layout both call them, so the calculation can
-only drift from reality if somebody writes a panel string somewhere else.
+There is exactly one place that produces panel text, the registry (`Metrics.js`), and a small set of functions
+in `main.qml` that look it up and measure it. The maximum-length calculation (`stripLength`, `computeFit`) and
+the on-screen layout both call them, so the calculation can only drift from reality if somebody writes a panel
+string somewhere else.
 
 ### Text: `statText(id, compact, vert)`
 
+Each registry entry holds the templates of a stat (`panel.full`, `panel.compact`, `panel.vertical`,
+`panel.verticalCompact`) as strings such as `"CPU {value:pct}"`, and the worst-case sample values
+(`panel.sample`, `panel.verticalSample`, `panel.sampleBits`). `main.qml` renders them:
+
 ```
 statText(id, compact, vert)
-  vert  -> verticalLines(id, compact, false).join("\n")
-  horiz -> caption + valueText(id, compact, false)     (net and fan are special cases)
+  m = M.byId(id)
+  M.panelText(m, compact, vert, statVals(id), textCtx)
+    vert  -> the vertical templates (caption line first), joined with "\n"
+    horiz -> panel.full or panel.compact
 
-valueText(id, compact, sample)   the value part, no caption
-  v = statValue(id, sample)      live value, or a worst-case value when sample is true
-  cpu, ram -> pct(v)             temp -> temp(v) | tempShort(v)      freq -> freq(v) | freqShort(v)
-  bat      -> batValue(v, sample ? 1 : batState, compact)            fan  -> rpmNumber(v)
-
-netLines(sample)                 ["down", "up"] as short strings ("↓4.5M", "↑3K"); also the worst-case sample
-verticalLines(id, compact, sample)   [verticalCaption(id)] + value line(s); net gives caption + netLines
+verticalLines(id, compact, sample)     the vertical lines; sample = the worst-case values instead of the live ones
+statVals(id)                           the live values the templates read: { value }, { down, up }, { percent, state }
 ```
 
 Horizontal texts: `CPU 8%` / `C 8%`, `RAM`/`R`, `BAT 62% ↑` / `B 62%↑`, fan `2400 RPM` / `2400`, temp and
-freq are value only. The net full text comes from `netText()` (`rate()` strings such as `↓4.5 MB/s`); its
-compact text joins `netLines(false)`.
+freq are value only, net `↓4.5 MB/s ↑3 KB/s` / `↓4.5M ↑3K`. A template is plain text with `{key:format}`
+holes; the formats (`pct`, `temp`, `rate`, ...) are `M.FORMATS`, and the registry test pins every one of them
+against golden data.
 
-`sample` makes `statValue` return the widest value a stat can reach (100, 9900 MHz, 9999 RPM; net uses
-`999e6` bytes/s, divided by 8 in bits mode so it is the widest in either unit). That is what width
-measurements use.
+Why the bindings still track. `Metrics.js` is a `.pragma library`: its functions are pure and cannot see
+`root`'s properties, so QML cannot track what they read. The caller therefore reads every input itself and
+hands it in: the live values through `statVals(id)` (which reads the sensors inside the function that the
+binding calls, so a changed sensor re-evaluates the binding as it always did) and the settings through
+`textCtx`, a `readonly property var` on `root` (`{ useF, netBits }`). A binding that calls `statText` reads
+`textCtx`, so flipping Fahrenheit or bits re-evaluates it. A formatter must read only settings that `textCtx`
+carries (the test checks this); a new setting that changes text has to be added to `textCtx` first.
+
+`sample` makes a stat render its widest value (100, 9900 MHz, 9999 RPM; net uses `999e6` bytes/s, divided by 8
+in bits mode so it is the widest in either unit; the battery uses the charging state vertically and the
+discharging one horizontally). That is what width measurements use.
 
 `statCompact(id)` decides whether a stat's value text is shortened:
 
 - horizontal: `lengthLevel >= 2` (the compact-text step of the maximum length);
-- vertical: only for `temp`, `freq` and `bat` (the only ones with a shorter value form), and only when that
-  stat's own full text (`verticalWidth(id)`) is wider than `panelThickness - 2 * smallSpacing`. Shortening
-  saves no length on a vertical panel, so it is never a length step there.
+- vertical: only for stats whose registry entry has `panel.verticalCompact` (`temp`, `freq`, `bat`), and only
+  when that stat's own full text (`verticalWidth(id)`) is wider than `panelThickness - 2 * smallSpacing`.
+  Shortening saves no length on a vertical panel, so it is never a length step there.
 
 ### Widths
 
 | Function | Used for |
 |---|---|
-| `reservedWidth(id, compact)` | horizontal: the widest text of a stat, from `TextMetrics` items |
-| `verticalWidth(id)` | vertical: widest line of `verticalLines(id, false, true)` measured with `FontMetrics fm`; at least the icon size for `fan` |
+| `reservedWidth(id, compact)` | horizontal: the widest text of a stat, the width of its `TextMetrics` item |
+| `verticalWidth(id)` | vertical: widest line of `verticalLines(id, false, true)` measured with `FontMetrics fm`; at least the icon size for stats with a `decoration` (`fan`) |
 | `cellLength(id, level)` | space one stat takes along the panel at a step (width, or height when vertical) |
 | `stripLength(level, drop)` | length of the whole strip at a step with the last `drop` stats removed |
 
 Horizontal: the `Label` in a `MetricCell` has `Layout.minimumWidth` and `preferredWidth` equal to
 `reservedWidth(statId, statCompact(statId))`, so the strip does not resize when a number gains a digit.
-`reservedWidth` returns the width of a `TextMetrics` item (`mCpu`, `mCpuC`, `mRam`, ..., `mFan`, `mFanC`)
-whose `text` is a hand-written worst-case string such as `"CPU 100%"` or `"↓999 MB/s ↑999 MB/s"`. Note that
-only the vertical width is derived from `statText`'s own code (via `sample`). For the horizontal width, the
-reserve strings are separate text that must be kept in step with the format by hand.
-`mTemp`/`mTempC` depend on `useF` (`"212°F"` vs `"100°C"`).
+An `Instantiator` (`reserveInst`) creates one `TextMetrics` per registry entry and kind (full, compact), keyed
+`"<id>"` and `"<id>C"` in `root.reserveItems`. Its `text` is `M.reserveText(entry, compact, root.textCtx)`: the
+entry's `panel.sample` rendered with the same template as the panel, so the reserve cannot drift from the
+format. Because `text` and `font` are bindings, the width is measured again when Fahrenheit or the font changes.
+`reserveItems` is a property, so a width read before the items exist is read again when they do. The reserve
+is `TextMetrics.width`, not `FontMetrics.advanceWidth`: they differ by a fraction of a pixel (the strip has
+always been sized from the former). The net reserve is the bytes text `↓999 MB/s ↑999 MB/s` in both unit modes
+(`panel.reserveCtx`), a long-standing quirk kept on purpose.
+
+Vertical: `verticalWidth` measures the worst-case `verticalLines(..., true)` with `FontMetrics`
+(`advanceWidth` is not bindable, so it starts with `void fm.font`; it reads `textCtx` through
+`verticalLines`).
 
 `cellLength` horizontal: `reservedWidth`, plus the fan icon (`iconSizes.smallMedium + smallSpacing`) for
-`fan`, plus `smallSpacing + inlineGraphWidth` (`gridUnit * 4`) for an inline graph.
+a stat with a `decoration` (`hasIcon(id)`, the fan), plus `smallSpacing + inlineGraphWidth` (`gridUnit * 4`) for an inline graph.
 `cellLength` vertical: line count (`verticalLines(id, false, true).length`) times `mLine.height`, plus the
-icon size for `fan`, plus `gridUnit` for an inline graph.
+icon size for a stat with a `decoration` (`fan`), plus `gridUnit` for an inline graph.
 
 `stripLength(level, drop)` adds the cell lengths of the first `n = shown - drop` stats, then
 `(n - 1) * (1 + 2 * gap)` (a 1 px divider and a gap on each side), rounds up, and adds a flat 1 px for layout
@@ -573,8 +596,8 @@ only while the popup shows them.
 
 - The strip is a single column (`columns: 1`); the `Divider` fills the width; the layout's minimum width is 0
   and `Layout.fillWidth` is true, so the panel's thickness sets the width.
-- A stat's text is its lines joined by newlines: the caption (`verticalCaption`: "CPU", "RAM", "Temp",
-  "Freq", "Net", "Bat", "Fan") and then the value line, or for net the two `netLines`. The caption is always
+- A stat's text is its lines joined by newlines: the caption (the first template of `panel.vertical`: "CPU",
+  "RAM", "Temp", "Freq", "Net", "Bat", "Fan") and then the value line, or for net the two rate lines. The caption is always
   kept; only the value is shortened, and only when it is wider than the panel (`statCompact`). The `Label`
   uses `fontSizeMode: Text.HorizontalFit` with `minimumPixelSize: 8`.
 - `compact` (the `MouseArea`) publishes `panelThickness` (its width when vertical, else 0) to `root` through a
@@ -657,7 +680,7 @@ them. It has its own `statName(id)` switch (a second copy of the stat names).
 
 ## 14. How to add a new stat
 
-Replace `X` with the stat. Items 1 to 4 are the data, 5 to 9 the panel, 10 the popup, 11 and 12 the
+Replace `X` with the stat. Items 1 to 4 are the data, 5 to 8 the panel, 9 the popup, 10 and 11 the
 settings. Everything else (strip layout, tooltip, `syncLengthInfo`, `configs()`, dragging, the
 `GridLayout` column count) is generic over `statOrder` and needs no change.
 
@@ -679,26 +702,28 @@ settings. Everything else (strip layout, tooltip, `syncLengthInfo`, `configs()`,
    sensor (like battery and fan), wrap its value in a `QtObject { readonly property var value: ... }`.
 5. `main.qml`, ordering and flags: add the id to `defaultOrder`, and a case to `statShown` (use the
    hardware-checked property), `statGraph` (`gpX`) and `statPopupGraph` (`gdX`).
-6. `main.qml`, widths: add `TextMetrics m<X>` and `m<X>C` with the widest full and compact text (the
-   horizontal reserve is not derived from `statText`), and the cases in `reservedWidth`. If the stat has an
-   icon or other fixed extra content, add it to `cellLength` for both orientations (as for `fan`).
-7. `main.qml`, text: add `statValue(id, sample)` (live value, and a worst-case sample), the case in
-   `valueText` (the value part, with `compact` and `sample`), the horizontal case in `statText` (caption plus
-   value, or `v` alone), and the `verticalCaption`. `verticalLines` is generic; a stat with more than one
-   value line needs a special case like `net`. If its vertical value has a shorter form, add its id to the
-   list in `statCompact` (`temp`, `freq`, `bat`) and handle `compact` in `valueText`.
-8. `main.qml`, helpers: `statAlert` (if it can alert), `statHistory` (and `statHistory2` for a second
+6. `Metrics.js` and `main.qml`, panel text and widths: add the stat's entry to `METRICS` (and its id to
+   `DEFAULT_ORDER`): `panel.full`, `panel.compact`, `panel.vertical` (caption first), `panel.verticalCompact`
+   when the vertical value has a shorter form (that alone makes `statCompact` consider it), `panel.sample` (the
+   widest values: the horizontal width reserve and the vertical width are rendered from it; `sampleBits`,
+   `verticalSample` and `reserveCtx` cover the special cases), and `panel.decoration` for an icon (only
+   `"fanIcon"` is handled in `cellLength`/`verticalWidth`). A new value format goes into `FORMATS`. Then add the
+   case to `statVals` in `main.qml` (the live values, under the keys the templates read). There is no `m*`
+   `TextMetrics`, no `reservedWidth` case, no `valueText`/`statText`/`verticalCaption`/`statValue` case and no
+   list in `statCompact` to edit any more. `tests/golden/` is frozen at v0.9.1, so a new stat is covered by
+   literal checks added to `tests/metrics_test.py`, not by regenerating it.
+7. `main.qml`, helpers: `statAlert` (if it can alert), `statHistory` (and `statHistory2` for a second
    line), `statYTo` (and `statYFrom`) if the scale is not 0..100.
-9. `main.qml`, `MetricCell`: nothing for a text-only stat. For an icon, follow `cell.fan` (the extra grid
+8. `main.qml`, `MetricCell`: nothing for a text-only stat. For an icon, follow `cell.fan` (the extra grid
    column and the icon item).
-10. `main.qml`, popup: a case in `popupShown`, a case in `popupBlock`, and a `Component { id: xBlock; ...}`
+9. `main.qml`, popup: a case in `popupShown`, a case in `popupBlock`, and a `Component { id: xBlock; ...}`
     holding `PopupRow`s and `PopupGraph { statId: "x" }`. Gate any popup-only sensor with `&& root.expanded`.
-11. `configMetrics.qml`: add the entry to `stats` (id, translated name, the four setting names); add
+10. `configMetrics.qml`: add the entry to `stats` (id, translated name, the four setting names); add
     `cfg_*` and `cfg_*Default` properties for every new key; if hardware-dependent, add the `xCount`
     read (`Plasmoid.configuration.xCount`), a `hasX` property and a case in `rowAvailable`. Do not declare
     `cfg_xCount`.
-12. `LengthNotice.qml`: add a case to its own `statName(id)`.
-13. Version and docs: bump the version in `metadata.json` before `./package.sh`; update the README.
+11. `LengthNotice.qml`: add a case to its own `statName(id)`.
+12. Version and docs: bump the version in `metadata.json` before `./package.sh`; update the README.
 
 Check the result by running `plasmawindowed org.local.cpumemtemp` and looking at a screenshot. QML load
 errors appear in the window, not on stderr. There is no `qmllint` here.
@@ -717,12 +742,16 @@ Each of these is visible in the code or its comments, except where marked.
 - Do not call `configs()` on every mouse move. Use the `layouts` cache; `beginDrag` and `dragStep` read
   it. `configs()` is only called from the binding that fills `layouts`.
 - Do not hand-write a panel string or width outside `statText` / `reservedWidth` / `verticalWidth` /
-  `cellLength`; the max-length calculation and the layout would disagree. When you change a text format, also
-  update the `m*` reserve strings, which are separate.
+  `cellLength`; the max-length calculation and the layout would disagree. A text format is a template in the
+  registry; the width reserve follows it, because both are rendered from the same entry.
+- `Metrics.js` cannot see `root`'s properties and QML cannot track what it reads. Pass every setting a
+  formatter needs in through `textCtx` and every live value through `statVals`, inside the function a binding
+  calls; do not cache the rendered text in a place that is not bound.
 - Do not give a settings page a `cfg_` property for a key the widget writes (`length*`, `batteryCount`,
   `fanCount`), or Apply writes stale values back.
 - `FontMetrics.advanceWidth` is not bindable. `verticalWidth` starts with `void fm.font` so the width is
-  measured again when the font changes.
+  measured again when the font changes. The horizontal reserves are `TextMetrics` items, whose `text` and
+  `font` are bindings, and their width is `TextMetrics.width`, not `advanceWidth` (the two differ slightly).
 - Do not switch `MetricCell`'s inner layout between `anchors.fill` and `anchors.centerIn`; bind
   `width`/`height` explicitly (section 12).
 - In `fanRepeater.onItemRemoved`, the removed delegate may still be reachable; `collectFans(removed)` leaves it

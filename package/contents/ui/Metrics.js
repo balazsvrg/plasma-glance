@@ -3,8 +3,10 @@
 // Metrics registry: one declarative entry per stat, plus the pure helpers that turn an entry's
 // templates into panel / popup text.
 //
-// STATUS: data and helpers only. Nothing in the widget imports this file yet; main.qml still has
-// its own copies of every format. tests/metrics_test.py proves that the two agree.
+// STATUS: main.qml takes its panel text (statText, verticalLines) and its horizontal width reserves from
+// this file; the rest of a descriptor (keys, sensors, scale, alert, popup rows) is not used by the widget
+// yet and is checked against it by tests/metrics_test.py. This is a .pragma library: the functions are pure
+// and see no QML properties, so the caller passes every setting in through ctx and every value through vals.
 //
 // Descriptor fields (a field is present only when the stat needs it):
 //   id        short id used in statOrder ("cpu", "ram", ...)
@@ -32,7 +34,7 @@ function isNum(v) {
     return v !== undefined && v !== null && v !== "" && isFinite(Number(v))
 }
 
-// ---- formatters (ported 1:1 from main.qml; settings come in through ctx instead of root) ----
+// ---- formatters (settings come in through ctx) ----
 function rateParts(v, ctx) {
     var bits = !!(ctx && ctx.netBits)
     var x = bits ? Number(v) * 8 : Number(v)
@@ -73,14 +75,33 @@ var FORMATS = {
 }
 
 // Renders "{key:format}" templates. A key missing from vals renders "--"; a format name that does not
-// exist throws (a typo in a descriptor must not turn into silent text).
+// exist throws (a typo in a descriptor must not turn into silent text). A template is split into its parts
+// once and kept (the panel renders the same few templates on every sensor update).
+var PARSED = Object.create(null)      // no inherited keys, so a template named like an Object method is safe
+function parse(template) {
+    var t = String(template), cached = PARSED[t]
+    if (cached) return cached
+    var parts = [], re = /\{(\w+)(?::(\w+))?\}/g, last = 0, m
+    while ((m = re.exec(t)) !== null) {
+        if (m.index > last) parts.push(t.slice(last, m.index))
+        parts.push({ key: m[1], fmt: m[2], src: t })
+        last = re.lastIndex
+    }
+    if (last < t.length) parts.push(t.slice(last))
+    PARSED[t] = parts
+    return parts
+}
 function render(template, vals, ctx) {
-    return String(template).replace(/\{(\w+)(?::(\w+))?\}/g, function (all, key, fmt) {
-        if (!vals || !(key in vals)) return "--"
-        var f = fmt ? FORMATS[fmt] : FORMATS.raw
-        if (!f) throw new Error("unknown format '" + fmt + "' in template: " + template)
-        return f(vals[key], ctx)
-    })
+    var parts = parse(template), out = ""
+    for (var i = 0; i < parts.length; ++i) {
+        var p = parts[i]
+        if (typeof p === "string") { out += p; continue }
+        if (!vals || !(p.key in vals)) { out += "--"; continue }
+        var f = p.fmt ? FORMATS[p.fmt] : FORMATS.raw
+        if (!f) throw new Error("unknown format '" + p.fmt + "' in template: " + p.src)
+        out += f(vals[p.key], ctx)
+    }
+    return out
 }
 function renderLines(templates, vals, ctx) {
     var out = []
@@ -303,18 +324,18 @@ function sampleVals(m, vertical, ctx) {
     if (!vertical) return p.sample
     return ctx && ctx.netBits && p.sampleBits ? p.sampleBits : (p.verticalSample || p.sample)
 }
-// The lines of a stat on a vertical panel (caption first), as verticalLines() in main.qml.
+// The lines of a stat on a vertical panel (caption first).
 function verticalLines(m, compact, vals, ctx) {
     return renderLines(compact && m.panel.verticalCompact ? m.panel.verticalCompact : m.panel.vertical, vals, ctx)
 }
-// The text a stat reserves its width for horizontally (what the m* TextMetrics hold in main.qml).
+// The text a stat reserves its width for horizontally (main.qml measures it with TextMetrics).
 function reserveText(m, compact, ctx) {
     var c = {}, k
     for (k in ctx) c[k] = ctx[k]
     for (k in m.panel.reserveCtx) c[k] = m.panel.reserveCtx[k]
     return panelText(m, compact, false, m.panel.sample, c)
 }
-// The text of a stat in the panel, as statText() in main.qml.
+// The text of a stat in the panel (statText() in main.qml).
 function panelText(m, compact, vertical, vals, ctx) {
     if (vertical) return verticalLines(m, compact, vals, ctx).join("\n")
     return render(compact ? m.panel.compact : m.panel.full, vals, ctx)
