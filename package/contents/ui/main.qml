@@ -627,9 +627,6 @@ PlasmoidItem {
     function ghzNumber(v) { return M.FORMATS.ghz(v) }
     function freq(v) { return M.FORMATS.freq(v) }
     // The popup's battery row: the percentage, the state arrow and the energy of all batteries.
-    function batRowText() {
-        return M.render(M.byId("bat").popup.rows[0].value, { percent: batPercent, state: batState, energy: batEnergyTotal() }, textCtx)
-    }
     // Hours as "3h 12m" or "45m"; empty when it cannot be estimated.
     function hoursText(hours) {
         if (!isFinite(hours) || hours < 0 || hours > 99) return ""
@@ -1336,6 +1333,7 @@ PlasmoidItem {
     // the others. Read inside the calling binding, so QML re-evaluates it.
     function popupVals(id) {
         var m = M.byId(id)
+        if (id === "bat") { var b = statVals(id); b.energy = batEnergyTotal(); return b }
         if (m.source) return statVals(id)
         var vals = {}
         for (var name in m.sensors) vals[name] = sensorValue(id, name)
@@ -1364,7 +1362,7 @@ PlasmoidItem {
         valueColor: root.popupRowColor(statId, modelData)
         fanIcon: modelData.decoration === "fanIcon"
     }
-    // The block of a stat made only of registry rows and a graph (every stat but the battery so far).
+    // The block of a stat made only of registry rows and a graph (every stat).
     // Its stat id comes from the Loader that holds it.
     Component {
         id: statBlock
@@ -1374,6 +1372,14 @@ PlasmoidItem {
             Repeater {
                 model: blk.statId ? M.byId(blk.statId).popup.rows.slice(0, M.popupRowsBeforeGraph(M.byId(blk.statId))) : []
                 delegate: StatRow { statId: blk.statId }
+            }
+            Repeater {
+                model: blk.statId ? (M.byId(blk.statId).popup.hooks || []) : []
+                delegate: Loader {
+                    required property string modelData
+                    sourceComponent: root.hookComponent(modelData)
+                    visible: item !== null && item.shown
+                }
             }
             PopupGraph {
                 statId: blk.statId
@@ -1394,24 +1400,22 @@ PlasmoidItem {
         }
     }
 
-    function popupBlock(id) {
-        switch (id) {
-        case "bat":  return batBlock
+    // Bespoke parts of a popup (registry popup.hooks), one component each; the Loader shows its item only while
+    // the item says `shown`, so an empty hook adds no layout spacing.
+    function hookComponent(name) {
+        switch (name) {
+        case "perBattery": return perBatteryHook
+        case "chargeRow":  return chargeRowHook
         }
-        return M.byId(id) ? statBlock : null
+        return null
     }
-
+    // One line per battery, only when "each battery separately" is chosen.
     Component {
-        id: batBlock
+        id: perBatteryHook
         ColumnLayout {
-            PopupRow {
-                name: "Battery"
-                value: root.batRowText()
-                valueColor: root.statTextColor("bat")
-            }
-            // One line per battery, only when "each battery separately" is chosen.
+            readonly property bool shown: root.batSeparate && root.batterySources.length > 1
             Repeater {
-                model: (root.batSeparate && root.batterySources.length > 1) ? root.batterySources : []
+                model: parent.shown ? root.batterySources : []
                 delegate: PlasmaComponents.Label {
                     required property var modelData
                     readonly property var d: root.batteryData(modelData)
@@ -1422,12 +1426,15 @@ PlasmoidItem {
                           + (d["State"] === "Charging" ? "  ↑" : (d["State"] === "Discharging" ? "  ↓" : ""))
                 }
             }
-            PopupRow {
-                visible: root.batState !== 0
-                name: root.batState > 0 ? "Charging" : "Discharging"
-                value: root.batTimeText() !== "" ? root.batTimeText() + (root.batState > 0 ? " to full" : " left") : "estimating…"
-            }
-            PopupGraph { statId: "bat" }
+        }
+    }
+    // The charging / discharging row with the time to full or left.
+    Component {
+        id: chargeRowHook
+        PopupRow {
+            readonly property bool shown: root.batState !== 0
+            name: root.batState > 0 ? "Charging" : "Discharging"
+            value: root.batTimeText() !== "" ? root.batTimeText() + (root.batState > 0 ? " to full" : " left") : "estimating…"
         }
     }
     // The per-item lines of a stat's popup (the temperature of each core): a header and a two-column grid, one
@@ -1491,7 +1498,7 @@ PlasmoidItem {
                 readonly property string blockStatId: modelData
                 active: root.popupShown(modelData)
                 visible: active
-                sourceComponent: root.popupBlock(modelData)
+                sourceComponent: M.byId(modelData) ? statBlock : null
             }
         }
 

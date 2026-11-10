@@ -109,7 +109,7 @@ frequency, network and fan, and Plasma's `powermanagement` data engine for the b
                   +--> PopupGraph { statId } in a popup block
 
  Popup rows (PopupRow) do NOT use statText: they call the format helpers directly
- (pct, gib, freq, ghzNumber, rate, bytesText, temp, wh, rpmText, batRowText) on the sensor values. They are
+ (pct, gib, freq, ghzNumber, rate, bytesText, temp, wh) on the sensor values. They are
  thin wrappers over `M.FORMATS` in `Metrics.js`, the same formatters the panel templates use.
 ```
 

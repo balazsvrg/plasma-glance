@@ -598,7 +598,13 @@ check("the stat block's rows, graph and per-item lines use the registry's flags"
       and "M.flagOn(M.byId(blk.statId).popup.repeat.when" in MAIN_QML
       and "M.popupGraphShown(M.byId(blk.statId), root.popupFlags(blk.statId))" in MAIN_QML)
 check("the loader hands its stat id to the block", "readonly property string blockStatId: modelData" in MAIN_QML)
-equal("popupBlock keeps only bat hand-written", sorted(re.findall(r'case "(\w+)":\s+return (\w+)Block', MAIN_QML)), [("bat", "bat")])
+check("main.qml has no popupBlock switch and no batBlock", "function popupBlock" not in MAIN_QML and "id: batBlock" not in MAIN_QML)
+check("every popup is the one generic block", "sourceComponent: M.byId(modelData) ? statBlock : null" in MAIN_QML)
+equal("hook names in the registry equal the components main.qml has", run(M, "METRICS.reduce(function(a,m){return a.concat(m.popup.hooks||[])},[])"), ["perBattery", "chargeRow"])
+for hk in ("perBattery", "chargeRow"):
+    check("main.qml has a component for hook " + hk, 'case "%s":' % hk in MAIN_QML and "id: %sHook" % hk in MAIN_QML)
+check("hooks sit between the rows and the graph and show only when their item says so", "popup.hooks || []" in MAIN_QML and "visible: item !== null && item.shown" in MAIN_QML)
+check("the battery popup row gets the summed energy", 'b.energy = batEnergyTotal()' in MAIN_QML)
 check("main.qml has no tempBlock", "id: tempBlock" not in MAIN_QML)
 equal("rows before the graph", run(M, "METRICS.map(function(m){return m.id+':'+popupRowsBeforeGraph(m)}).join(' ')"), "cpu:1 ram:1 temp:1 freq:2 net:2 bat:1 fan:1")
 check("the fan icon comes from the registry's row decoration", 'fanIcon: modelData.decoration === "fanIcon"' in MAIN_QML)
