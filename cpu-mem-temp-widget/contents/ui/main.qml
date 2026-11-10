@@ -24,6 +24,8 @@ PlasmoidItem {
     Sensors.Sensor { id: memTotal;   sensorId: "memory/physical/total";        updateRateLimit: root.refreshMs }
     Sensors.Sensor { id: tempAvg;    sensorId: "cpu/all/averageTemperature";   updateRateLimit: root.refreshMs }
     Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs }
+    // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
+    Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount" }
 
     // ---- formatting helpers ----
     // Accepts any real numeric value; rejects undefined, null, "" and NaN so a
@@ -160,6 +162,54 @@ PlasmoidItem {
             text: root.temp(tempMax.value)
             font.bold: true
             color: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+        }
+
+        // ---- per-core temperatures ----
+        // Sensors are created per delegate, so they only exist while the popup is open.
+        // Threads of one physical core (hyperthreading) report the same temperature.
+        PlasmaComponents.Label {
+            visible: perCore.count > 0
+            Layout.columnSpan: 2
+            Layout.topMargin: Kirigami.Units.smallSpacing
+            text: "Per core"
+            font.bold: true
+        }
+
+        GridLayout {
+            visible: perCore.count > 0
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+            columns: 2
+            columnSpacing: Kirigami.Units.gridUnit * 2
+            rowSpacing: 0
+
+            Repeater {
+                id: perCore
+                model: root.isNum(coreCount.value) ? Number(coreCount.value) : 0
+
+                delegate: RowLayout {
+                    id: coreRow
+                    required property int index
+                    Layout.fillWidth: true
+
+                    Sensors.Sensor {
+                        id: coreTemp
+                        sensorId: "cpu/cpu" + coreRow.index + "/temperature"
+                        updateRateLimit: root.refreshMs
+                    }
+                    readonly property bool hot: root.isNum(coreTemp.value) && coreTemp.value >= root.warnTempC
+
+                    PlasmaComponents.Label {
+                        text: "Core " + (coreRow.index + 1)
+                        Layout.fillWidth: true
+                    }
+                    PlasmaComponents.Label {
+                        text: root.temp(coreTemp.value)
+                        font.bold: true
+                        color: coreRow.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                    }
+                }
+            }
         }
     }
 }

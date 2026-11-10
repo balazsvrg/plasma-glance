@@ -9,7 +9,8 @@ CPU 4%  |  RAM 30%  |  35°C
 
 - Horizontal panels: one line, thin dividers spanning the panel height.
 - Vertical panels: three captioned blocks (`CPU` over `4%`), text shrinks to fit.
-- Click for a popup with used / total memory and average and max core temperature.
+- Click for a popup with used / total memory, average and max temperature, and a per-core
+  temperature list (one entry per KDE core sensor; hyperthreads of one physical core read alike).
 - Each temperature turns red when it reaches the configurable threshold.
 - Pure QML. No native code, no background processes: values come from KDE's own
   sensor service (`org.kde.ksysguard.sensors`).
@@ -55,7 +56,8 @@ panel to a screen edge or add a temporary vertical panel.
 
 Sensor IDs used (check with `kstatsviewer --list`):
 `cpu/all/usage`, `memory/physical/usedPercent`, `memory/physical/used`,
-`memory/physical/total`, `cpu/all/averageTemperature`, `cpu/all/maximumTemperature`.
+`memory/physical/total`, `cpu/all/averageTemperature`, `cpu/all/maximumTemperature`,
+`cpu/all/coreCount`, `cpu/cpuN/temperature`.
 
 ## Layout
 
