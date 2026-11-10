@@ -101,6 +101,12 @@ KCM.SimpleKCM {
     readonly property bool hasBat: batteryCount > 0
     readonly property bool hasFan: fanCount > 0
     function rowAvailable(id) { return id === "bat" ? hasBat : (id === "fan" ? hasFan : true) }
+    // Position among the rows that are actually shown, so stripes alternate even when Battery or Fan is hidden.
+    function visiblePosition(index) {
+        var n = 0
+        for (var i = 0; i < index; ++i) if (rowAvailable(orderModel.get(i).statId)) ++n
+        return n
+    }
 
     // Is this stat currently hidden by the maximum length? (read live from the widget's state)
     function hiddenByLength(id) {
@@ -155,6 +161,8 @@ KCM.SimpleKCM {
     readonly property real nameWidth: Kirigami.Units.gridUnit * 20
     readonly property real checkWidth: Kirigami.Units.gridUnit * 3.5
     readonly property real gap: Kirigami.Units.smallSpacing
+    readonly property real pad: Kirigami.Units.smallSpacing * 2      // inside the table's outline
+    readonly property color outlineColor: Qt.alpha(Kirigami.Theme.textColor, 0.3)
 
     // A checkbox cell tied to a setting by name, centred under its column header; the Binding keeps
     // the box in step after the user clicks it.
@@ -214,150 +222,197 @@ KCM.SimpleKCM {
             Layout.bottomMargin: Kirigami.Units.smallSpacing
         }
 
-        // Group headers
-        RowLayout {
-            spacing: page.gap
-            Item { Layout.preferredWidth: page.handleWidth }
-            QQC2.Label { text: i18n("Stat"); font.bold: true; Layout.preferredWidth: page.nameWidth }
-            QQC2.Label {
-                text: i18n("In the panel"); font.bold: true
-                horizontalAlignment: Text.AlignHCenter
-                Layout.preferredWidth: page.checkWidth * 2 + page.gap
-            }
-            QQC2.Label {
-                text: i18n("In the popup"); font.bold: true
-                horizontalAlignment: Text.AlignHCenter
-                Layout.preferredWidth: page.checkWidth * 2 + page.gap
-            }
-        }
-        RowLayout {
-            spacing: page.gap
-            Item { Layout.preferredWidth: page.handleWidth }
-            Item { Layout.preferredWidth: page.nameWidth }
-            Repeater {
-                model: [i18n("Show"), i18n("Graph"), i18n("Show"), i18n("Graph")]
-                delegate: QQC2.Label {
-                    required property string modelData
-                    text: modelData
-                    opacity: 0.8
-                    horizontalAlignment: Text.AlignHCenter
-                    Layout.preferredWidth: page.checkWidth
-                }
-            }
-        }
-
-        ListView {
-            id: list
+        // The table: an outline, view colours inside (a little darker than the window in a dark
+        // theme, like Dolphin) and alternating row colours.
+        Rectangle {
+            id: table
             Layout.fillWidth: true
-            Layout.preferredHeight: contentHeight
-            interactive: false                    // the page itself scrolls
-            model: orderModel
-            // Rows glide into place as they are reordered.
-            moveDisplaced: Transition {
-                YAnimator { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad }
-            }
+            implicitHeight: tableContent.implicitHeight + Kirigami.Units.smallSpacing * 2
+            Kirigami.Theme.inherit: false
+            Kirigami.Theme.colorSet: Kirigami.Theme.View
+            color: Kirigami.Theme.backgroundColor
+            border.width: 1
+            border.color: page.outlineColor
+            radius: 3
+            clip: true
 
-            delegate: Item {
-                id: slot
-                required property int index
-                required property string statId
-                readonly property var info: page.statInfo(statId)
-                width: list.width
-                visible: page.rowAvailable(statId)
-                height: visible ? row.implicitHeight : 0
+            ColumnLayout {
+                id: tableContent
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: Kirigami.Units.smallSpacing
+                spacing: Kirigami.Units.smallSpacing
 
-                // The dragged item must be a child of the delegate, not the delegate itself.
-                Item {
-                    id: row
-                    width: slot.width
-                    implicitHeight: content.implicitHeight + Kirigami.Units.smallSpacing * 2
-
-                    ColumnLayout {
-                        id: content
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width
-                        spacing: 0
-
-                        RowLayout {
-                            spacing: page.gap
-                            Kirigami.ListItemDragHandle {
-                                listItem: row
-                                listView: list
-                                Layout.preferredWidth: page.handleWidth
-                                Layout.preferredHeight: page.handleWidth
-                                onMoveRequested: function (oldIndex, newIndex) { page.moveRow(oldIndex, newIndex) }
-                            }
-                            StatName { name: slot.info.name; statId: slot.statId }
-                            CfgCheck { key: slot.info.show }
-                            CfgCheck { key: slot.info.graph }
-                            CfgCheck { key: slot.info.popup }
-                            CfgCheck { key: slot.info.popupGraph }
-                            QQC2.ToolButton {
-                                icon.name: "arrow-up"
-                                enabled: slot.index > 0
-                                onClicked: page.moveRow(slot.index, slot.index - 1)
-                                QQC2.ToolTip.text: i18n("Move up")
-                                QQC2.ToolTip.visible: hovered
-                            }
-                            QQC2.ToolButton {
-                                icon.name: "arrow-down"
-                                enabled: slot.index < orderModel.count - 1
-                                onClicked: page.moveRow(slot.index, slot.index + 1)
-                                QQC2.ToolTip.text: i18n("Move down")
-                                QQC2.ToolTip.visible: hovered
-                            }
-                        }
-
-                        // Popup-only details of the temperature stat; they move with it.
-                        RowLayout {
-                            visible: slot.statId === "temp"
-                            spacing: page.gap
-                            Item { Layout.preferredWidth: page.handleWidth }
-                            QQC2.Label { text: i18n("Hottest core"); opacity: 0.8; leftPadding: Kirigami.Units.gridUnit; Layout.preferredWidth: page.nameWidth }
-                            Item { Layout.preferredWidth: page.checkWidth }
-                            Item { Layout.preferredWidth: page.checkWidth }
-                            CfgCheck { key: "popupTempMax" }
-                        }
-                        RowLayout {
-                            visible: slot.statId === "temp"
-                            spacing: page.gap
-                            Item { Layout.preferredWidth: page.handleWidth }
-                            QQC2.Label { text: i18n("Per-core temperatures"); opacity: 0.8; leftPadding: Kirigami.Units.gridUnit; Layout.preferredWidth: page.nameWidth }
-                            Item { Layout.preferredWidth: page.checkWidth }
-                            Item { Layout.preferredWidth: page.checkWidth }
-                            CfgCheck { key: "popupCores" }
+                // Group headers
+                RowLayout {
+                    spacing: page.gap
+                    Layout.leftMargin: page.pad
+                    Item { Layout.preferredWidth: page.handleWidth }
+                    QQC2.Label { text: i18n("Stat"); font.bold: true; Layout.preferredWidth: page.nameWidth }
+                    QQC2.Label {
+                        text: i18n("In the panel"); font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.preferredWidth: page.checkWidth * 2 + page.gap
+                    }
+                    QQC2.Label {
+                        text: i18n("In the popup"); font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.preferredWidth: page.checkWidth * 2 + page.gap
+                    }
+                }
+                RowLayout {
+                    spacing: page.gap
+                    Layout.leftMargin: page.pad
+                    Item { Layout.preferredWidth: page.handleWidth }
+                    Item { Layout.preferredWidth: page.nameWidth }
+                    Repeater {
+                        model: [i18n("Show"), i18n("Graph"), i18n("Show"), i18n("Graph")]
+                        delegate: QQC2.Label {
+                            required property string modelData
+                            text: modelData
+                            opacity: 0.8
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.preferredWidth: page.checkWidth
                         }
                     }
                 }
-            }
-        }
+                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: page.outlineColor }      // under the headers
 
-        // Turn every graph on or off at once.
-        RowLayout {
-            spacing: page.gap
-            Layout.topMargin: Kirigami.Units.largeSpacing
-            Item { Layout.preferredWidth: page.handleWidth }
-            QQC2.Label { text: i18n("All graphs"); font.bold: true; Layout.preferredWidth: page.nameWidth }
-            Item { Layout.preferredWidth: page.checkWidth }
-            Item {
-                Layout.preferredWidth: page.checkWidth
-                implicitHeight: allPanelBox.implicitHeight
-                QQC2.CheckBox {
-                    id: allPanelBox
-                    anchors.centerIn: parent
-                    onToggled: page.setAllGraphs(false, checked)
-                    Binding { target: allPanelBox; property: "checked"; value: page.allGraphs(false) }
+                ListView {
+                    id: list
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: contentHeight
+                    interactive: false                    // the page itself scrolls
+                    model: orderModel
+                    // Rows glide into place as they are reordered.
+                    moveDisplaced: Transition {
+                        YAnimator { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad }
+                    }
+
+                    delegate: Item {
+                        id: slot
+                        required property int index
+                        required property string statId
+                        readonly property var info: page.statInfo(statId)
+                        readonly property int position: page.visiblePosition(index)   // among the shown rows
+                        width: list.width
+                        visible: page.rowAvailable(statId)
+                        height: visible ? row.implicitHeight : 0
+                        z: dragHandle.dragActive ? 10 : 1                              // the dragged row stays on top
+
+                        // The dragged item must be a child of the delegate, not the delegate itself.
+                        Item {
+                            id: row
+                            width: slot.width
+                            implicitHeight: content.implicitHeight + Kirigami.Units.smallSpacing * 2
+
+                            // Alternating colours, like Dolphin; the dragged row is highlighted.
+                            Rectangle {
+                                // The scheme's alternate colour when it differs from the background; some
+                                // schemes report the same colour for both, so then blend a little of the text
+                                // colour into the background (about what Dolphin's stripes look like).
+                                readonly property color stripe:
+                                    Kirigami.Theme.alternateBackgroundColor.toString() !== Kirigami.Theme.backgroundColor.toString()
+                                        ? Kirigami.Theme.alternateBackgroundColor
+                                        : Qt.tint(Kirigami.Theme.backgroundColor, Qt.alpha(Kirigami.Theme.textColor, 0.04))
+                                anchors.fill: parent
+                                color: dragHandle.dragActive ? Qt.alpha(Kirigami.Theme.highlightColor, 0.3)
+                                       : (slot.position % 2 === 0 ? Kirigami.Theme.backgroundColor : stripe)
+                            }
+
+                            ColumnLayout {
+                                id: content
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: page.pad
+                                width: parent.width - page.pad * 2
+                                spacing: 0
+
+                                RowLayout {
+                                    spacing: page.gap
+                                    Kirigami.ListItemDragHandle {
+                                        id: dragHandle
+                                        listItem: row
+                                        listView: list
+                                        Layout.preferredWidth: page.handleWidth
+                                        Layout.preferredHeight: page.handleWidth
+                                        onMoveRequested: function (oldIndex, newIndex) { page.moveRow(oldIndex, newIndex) }
+                                    }
+                                    StatName { name: slot.info.name; statId: slot.statId }
+                                    CfgCheck { key: slot.info.show }
+                                    CfgCheck { key: slot.info.graph }
+                                    CfgCheck { key: slot.info.popup }
+                                    CfgCheck { key: slot.info.popupGraph }
+                                    QQC2.ToolButton {
+                                        icon.name: "arrow-up"
+                                        enabled: slot.index > 0
+                                        onClicked: page.moveRow(slot.index, slot.index - 1)
+                                        QQC2.ToolTip.text: i18n("Move up")
+                                        QQC2.ToolTip.visible: hovered
+                                    }
+                                    QQC2.ToolButton {
+                                        icon.name: "arrow-down"
+                                        enabled: slot.index < orderModel.count - 1
+                                        onClicked: page.moveRow(slot.index, slot.index + 1)
+                                        QQC2.ToolTip.text: i18n("Move down")
+                                        QQC2.ToolTip.visible: hovered
+                                    }
+                                }
+
+                                // Popup-only details of the temperature stat; they move with it.
+                                RowLayout {
+                                    visible: slot.statId === "temp"
+                                    spacing: page.gap
+                                    Item { Layout.preferredWidth: page.handleWidth }
+                                    QQC2.Label { text: i18n("Hottest core"); opacity: 0.8; leftPadding: Kirigami.Units.gridUnit; Layout.preferredWidth: page.nameWidth }
+                                    Item { Layout.preferredWidth: page.checkWidth }
+                                    Item { Layout.preferredWidth: page.checkWidth }
+                                    CfgCheck { key: "popupTempMax" }
+                                }
+                                RowLayout {
+                                    visible: slot.statId === "temp"
+                                    spacing: page.gap
+                                    Item { Layout.preferredWidth: page.handleWidth }
+                                    QQC2.Label { text: i18n("Per-core temperatures"); opacity: 0.8; leftPadding: Kirigami.Units.gridUnit; Layout.preferredWidth: page.nameWidth }
+                                    Item { Layout.preferredWidth: page.checkWidth }
+                                    Item { Layout.preferredWidth: page.checkWidth }
+                                    CfgCheck { key: "popupCores" }
+                                }
+                            }
+                        }
+                    }
                 }
-            }
-            Item { Layout.preferredWidth: page.checkWidth }
-            Item {
-                Layout.preferredWidth: page.checkWidth
-                implicitHeight: allPopupBox.implicitHeight
-                QQC2.CheckBox {
-                    id: allPopupBox
-                    anchors.centerIn: parent
-                    onToggled: page.setAllGraphs(true, checked)
-                    Binding { target: allPopupBox; property: "checked"; value: page.allGraphs(true) }
+
+                // Turn every graph on or off at once.
+                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: page.outlineColor }      // above the footer
+                RowLayout {
+                    spacing: page.gap
+                    Layout.leftMargin: page.pad
+                    Layout.bottomMargin: Kirigami.Units.smallSpacing
+                    Item { Layout.preferredWidth: page.handleWidth }
+                    QQC2.Label { text: i18n("All graphs"); font.bold: true; Layout.preferredWidth: page.nameWidth }
+                    Item { Layout.preferredWidth: page.checkWidth }
+                    Item {
+                        Layout.preferredWidth: page.checkWidth
+                        implicitHeight: allPanelBox.implicitHeight
+                        QQC2.CheckBox {
+                            id: allPanelBox
+                            anchors.centerIn: parent
+                            onToggled: page.setAllGraphs(false, checked)
+                            Binding { target: allPanelBox; property: "checked"; value: page.allGraphs(false) }
+                        }
+                    }
+                    Item { Layout.preferredWidth: page.checkWidth }
+                    Item {
+                        Layout.preferredWidth: page.checkWidth
+                        implicitHeight: allPopupBox.implicitHeight
+                        QQC2.CheckBox {
+                            id: allPopupBox
+                            anchors.centerIn: parent
+                            onToggled: page.setAllGraphs(true, checked)
+                            Binding { target: allPopupBox; property: "checked"; value: page.allGraphs(true) }
+                        }
+                    }
                 }
             }
         }
