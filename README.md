@@ -35,6 +35,20 @@ Then right-click the panel, choose **Add Widgets**, and add
 
 Uninstall with `./uninstall.sh` (remove it from your panels first).
 
+### Package
+
+`./package.sh` builds `dist/org.local.cpumemtemp-<version>.plasmoid` (a zip with `metadata.json` and
+`contents/` at its top level, named after the id and version in `metadata.json`). Install it on this
+or any Plasma 6 machine with:
+
+```
+kpackagetool6 -t Plasma/Applet -i dist/org.local.cpumemtemp-0.5.plasmoid     # add -u instead of -i to upgrade
+```
+
+or from Plasma: right-click the panel > Add Widgets > Get New Widgets > Install from Local File.
+The `dist/` folder is not tracked by git. Before sharing the package, set a real author in
+`metadata.json` (it currently says "Local") and check the license field.
+
 ## Settings
 
 Right-click the widget in the panel and choose **Configure…**. There are three tabs: General, Metrics and Graphs.
