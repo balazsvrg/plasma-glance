@@ -4,8 +4,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-ID="org.local.cpumemtemp"
 SRC="glance"
+# The plugin ID lives in one place: the widget's metadata.json.
+ID=$(python3 -c "import json; print(json.load(open('$SRC/metadata.json'))['KPlugin']['Id'])")
 INSTALLED="${XDG_DATA_HOME:-$HOME/.local/share}/plasma/plasmoids/$ID"
 
 command -v kpackagetool6 >/dev/null || { echo "kpackagetool6 not found (is Plasma 6 installed?)" >&2; exit 1; }

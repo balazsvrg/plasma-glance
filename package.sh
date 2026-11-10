@@ -7,8 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 SRC="glance"
-ID=$(python3 -c "import json; print(json.load(open('$SRC/metadata.json'))['KPlugin']['Id'])")
-VERSION=$(python3 -c "import json; print(json.load(open('$SRC/metadata.json'))['KPlugin']['Version'])")
+read -r ID VERSION < <(python3 -c "import json; k = json.load(open('$SRC/metadata.json'))['KPlugin']; print(k['Id'], k['Version'])")
 OUT="dist/$ID-$VERSION.plasmoid"
 
 command -v zip >/dev/null || { echo "zip not found" >&2; exit 1; }

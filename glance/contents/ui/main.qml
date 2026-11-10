@@ -35,14 +35,19 @@ PlasmoidItem {
     readonly property bool showFan: Plasmoid.configuration.showFan
     readonly property bool popupFan: Plasmoid.configuration.popupFan
     readonly property bool fanAnimate: Plasmoid.configuration.fanAnimate
+    // Write a setting only when it changed (avoids needless config writes and change signals).
+    function setCfg(key, value) {
+        var c = Plasmoid.configuration
+        if (c[key] !== value) c[key] = value
+    }
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
-    Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs }
-    Sensors.Sensor { id: memPercent; sensorId: "memory/physical/usedPercent";  updateRateLimit: root.refreshMs }
-    // Sensors that only the popup, or only an optional stat, uses are switched off when nothing shows them.
+    // A sensor is switched off when nothing shows its stat, so nothing polls for data nobody sees.
+    Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs; enabled: root.showCpu || root.popupCpu }
+    Sensors.Sensor { id: memPercent; sensorId: "memory/physical/usedPercent";  updateRateLimit: root.refreshMs; enabled: root.showRam || root.popupMemory }
     Sensors.Sensor { id: memUsed;    sensorId: "memory/physical/used";         updateRateLimit: root.refreshMs; enabled: root.popupMemory }
     Sensors.Sensor { id: memTotal;   sensorId: "memory/physical/total";        updateRateLimit: root.refreshMs; enabled: root.popupMemory }
-    Sensors.Sensor { id: tempAvg;    sensorId: "cpu/all/averageTemperature";   updateRateLimit: root.refreshMs }
+    Sensors.Sensor { id: tempAvg;    sensorId: "cpu/all/averageTemperature";   updateRateLimit: root.refreshMs; enabled: root.showTemp || root.popupTempAvg }
     Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs; enabled: root.popupTempMax }
     Sensors.Sensor { id: freqAvg;    sensorId: "cpu/all/averageFrequency";     updateRateLimit: root.refreshMs; enabled: root.showFreq || root.popupFreq }
     Sensors.Sensor { id: freqMin;    sensorId: "cpu/all/minimumFrequency";     updateRateLimit: root.refreshMs; enabled: root.popupFreq }
@@ -71,6 +76,7 @@ PlasmoidItem {
     // second of real time, whatever the refresh rate; never below 100 KB/s.
     property real netPeak: 100000
     function trackNetPeak() {
+        if (!(gpNet || gdNet)) return                  // the scale only matters to a graph
         var d = isNum(netDown.value) ? Number(netDown.value) : 0
         var u = isNum(netUp.value) ? Number(netUp.value) : 0
         netPeak = Math.max(100000, d, u, netPeak * Math.pow(0.99, refreshMs / 1000))
@@ -95,8 +101,7 @@ PlasmoidItem {
 
     // The settings pages read the battery count from the config (they cannot see the engine).
     function syncBatteryCount() {
-        var n = hasBattery ? batterySources.length : 0
-        if (Plasmoid.configuration.batteryCount !== n) Plasmoid.configuration.batteryCount = n
+        setCfg("batteryCount", hasBattery ? batterySources.length : 0)
     }
     onHasBatteryChanged: syncBatteryCount()
     onBatterySourcesChanged: syncBatteryCount()
@@ -171,8 +176,7 @@ PlasmoidItem {
                 if (ids.length > 0 && JSON.stringify(ids) !== JSON.stringify(root.fanIds))
                     root.fanIds = ids
                 root.fanDiscoveryDone = final
-                if (final && Plasmoid.configuration.fanCount !== ids.length)
-                    Plasmoid.configuration.fanCount = ids.length
+                if (final) setCfg("fanCount", ids.length)
             }
         }
     }
@@ -215,7 +219,7 @@ PlasmoidItem {
     QtObject { id: fanSensor; readonly property var value: root.fanRpm }
 
     // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
-    Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount" }
+    Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount"; enabled: root.popupCores }
 
     // ---- graph history ----
     // Each stat has its own history. It is collected only while a graph that
@@ -273,7 +277,7 @@ PlasmoidItem {
     History { id: tempHistory; sensor: tempAvg;   wanted: (root.gpTemp && root.showTemp) || (root.gdTemp && root.popupTempAvg) }
     History { id: freqHistory; sensor: freqAvg;   wanted: (root.gpFreq && root.showFreq) || (root.gdFreq && root.popupFreq) }
     History { id: netDownHistory; sensor: netDown; wanted: (root.gpNet && root.showNet) || (root.gdNet && root.popupNet) }
-    History { id: netUpHistory;   sensor: netUp;   wanted: (root.gpNet && root.showNet) || (root.gdNet && root.popupNet) }
+    History { id: netUpHistory;   sensor: netUp;   wanted: netDownHistory.wanted }
     History { id: fanHistory;     sensor: fanSensor; wanted: (root.gpFan && root.fanShown) || (root.gdFan && root.popupFanShown) }
     History { id: batHistory;     sensor: batSensor; wanted: (root.gpBat && root.batShown) || (root.gdBat && root.popupBatShown) }
 
@@ -286,7 +290,7 @@ PlasmoidItem {
     readonly property var batHist: batHistory.historySource
     readonly property var fanHist: fanHistory.historySource
 
-    // One small line graph; used by the popup and (next) the panel.
+    // One small line graph; used by the panel cells and the popup.
     component Spark: Charts.LineChart {
         id: spark
         property var history: null
@@ -424,7 +428,7 @@ PlasmoidItem {
             running: fanIcon.animate && fanIcon.level > 0 && fanIcon.visible && fanIcon.width > 0
             onTriggered: {
                 rotor.rotation = (rotor.rotation + (fanIcon.level === 1 ? 10 : (fanIcon.level === 2 ? 22 : 40))) % 360
-                fanIcon.frame = (fanIcon.frame + 1) % 1000
+                if (fanIcon.level >= 3) fanIcon.frame = (fanIcon.frame + 1) % 1000    // only the shake uses it
             }
         }
     }
@@ -436,15 +440,12 @@ PlasmoidItem {
         return v !== undefined && v !== null && v !== "" && isFinite(Number(v))
     }
     function pct(v)   { return isNum(v) ? Math.round(v) + "%" : "--%" }
-    function temp(v) {
-        var unit = useF ? "°F" : "°C"
-        if (!isNum(v)) return "--" + unit
-        return Math.round(useF ? v * 9 / 5 + 32 : v) + unit
-    }
+    function tempNumber(v) { return isNum(v) ? String(Math.round(useF ? v * 9 / 5 + 32 : v)) : "--" }
+    function temp(v) { return tempNumber(v) + (useF ? "°F" : "°C") }
     function gib(v)   { return isNum(v) ? (v / 1073741824).toFixed(1) + " GiB" : "-- GiB" }
-    function rpmText(v) { return isNum(v) ? Math.round(Number(v)) + " RPM" : "-- RPM" }
+    function rpmText(v) { return rpmNumber(v) + " RPM" }
     function wh(v) { return isNum(v) ? Number(v).toFixed(1) + " Wh" : "-- Wh" }
-    function batArrow() { return batState > 0 ? " ↑" : (batState < 0 ? " ↓" : "") }
+    function batArrow() { var a = batArrowShort(); return a ? " " + a : "" }
     function batText() { return pct(batPercent) + batArrow() }
     // Hours as "3h 12m" or "45m"; empty when it cannot be estimated.
     function hoursText(hours) {
@@ -508,6 +509,7 @@ PlasmoidItem {
     // If even that is too long, stats are dropped from the end of the user's order (Fan, Battery, Net,
     // Freq, Temp, RAM in the default order) until it fits. The first stat in the order is never dropped.
     // The tooltip always lists everything.
+
     // The saved limit (px, 0 = no limit), or the live value while the edge handle is being dragged.
     readonly property int maxLength: dragging ? dragMax() : Plasmoid.configuration.maxLength
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
@@ -550,6 +552,18 @@ PlasmoidItem {
         }
         return false
     }
+    function statPopupGraph(id) {
+        switch (id) {
+        case "cpu":  return gdCpu
+        case "ram":  return gdRam
+        case "temp": return gdTemp
+        case "freq": return gdFreq
+        case "net":  return gdNet
+        case "bat":  return gdBat
+        case "fan":  return gdFan
+        }
+        return false
+    }
     function shownIds() {
         var ids = []
         for (var i = 0; i < statOrder.length; ++i) if (statShown(statOrder[i])) ids.push(statOrder[i])
@@ -586,10 +600,7 @@ PlasmoidItem {
         return 0
     }
 
-    function tempShort(v) {
-        if (!isNum(v)) return "--°"
-        return Math.round(useF ? v * 9 / 5 + 32 : v) + "°"
-    }
+    function tempShort(v) { return tempNumber(v) + "°" }
     function freqShort(v) {
         if (!isNum(v)) return "--G"
         return v >= 1000 ? (v / 1000).toFixed(1) + "G" : Math.round(v) + "M"
@@ -598,15 +609,9 @@ PlasmoidItem {
     function rpmNumber(v) { return isNum(v) ? String(Math.round(Number(v))) : "--" }
 
     // Per-stat colours, history and graph scale, so a panel cell needs nothing but its id.
-    function statTextColor(id) {
-        if (id === "temp" && avgHot) return Kirigami.Theme.negativeTextColor
-        if (id === "bat" && batLow) return Kirigami.Theme.negativeTextColor
-        return Kirigami.Theme.textColor
-    }
-    function statLineColor(id) {
-        var alert = (id === "temp" && avgHot) || (id === "bat" && batLow)
-        return alert ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
-    }
+    function statAlert(id) { return (id === "temp" && avgHot) || (id === "bat" && batLow) }
+    function statTextColor(id) { return statAlert(id) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor }
+    function statLineColor(id) { return statAlert(id) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor }
     function statHistory(id) {
         switch (id) {
         case "cpu":  return cpuHist
@@ -658,6 +663,7 @@ PlasmoidItem {
     // they are drawn behind the text. This one rule feeds the width calculation, the strip and the
     // settings warning.
     function inlineGraphsAt(level) { return graphInline && level === 0 }
+    readonly property real inlineGraphWidth: Kirigami.Units.gridUnit * 4       // used by the calculation and the strip
     function cellLength(id, level) {
         var compact = level >= 2
         var inlineGraph = inlineGraphsAt(level) && statGraph(id)
@@ -665,7 +671,7 @@ PlasmoidItem {
         if (!vertical) {
             var w = reservedWidth(id, compact)
             if (id === "fan") w += Kirigami.Units.iconSizes.smallMedium + gap
-            if (inlineGraph) w += gap + Kirigami.Units.gridUnit * 4
+            if (inlineGraph) w += gap + inlineGraphWidth
             return w
         }
         var lines = (id === "net" ? 2 : 1) + (compact ? 0 : 1)          // value lines (+ caption line)
@@ -688,9 +694,8 @@ PlasmoidItem {
         var total = 0
         for (var i = 0; i < n; ++i) total += cellLength(ids[i], level)
         var gap = vertical ? rowSpacingFor(level) : spacingFor(level)
-        // a 1 px divider and two gaps between stats; rounded up so rounding never lets it exceed the limit
-        // Layout rounding can add a pixel (seen as 1 px in every test, however many stats), so allow
-        // for it: the strip then stays at or under the limit.
+        // A 1 px divider and two gaps between stats. Rounded up, plus a pixel for layout rounding (seen as
+        // 1 px in every test, however many stats), so the strip stays at or under the limit.
         return Math.ceil(total + (n - 1) * (1 + 2 * gap)) + 1
     }
     function computeFit() {
@@ -707,7 +712,9 @@ PlasmoidItem {
     readonly property var fit: dragging ? dragFit() : computeFit()
     readonly property int lengthLevel: fit.level
     readonly property bool textCompact: lengthLevel >= 2
-    readonly property var droppedIds: shownIds().slice(shownIds().length - fit.drop)
+    // The shown stats split into those that fit and those dropped from the end to fit.
+    readonly property var visibleIds: { var ids = shownIds(); return ids.slice(0, ids.length - fit.drop) }
+    readonly property var droppedIds: { var ids = shownIds(); return ids.slice(ids.length - fit.drop) }
 
     // ---- adjusting the limit with the mouse ----
     // Right-click > "Adjust length with the mouse" shows a handle on the strip's far edge
@@ -735,14 +742,17 @@ PlasmoidItem {
         for (var drop = 1; drop < n; ++drop) list.push({ level: 3, drop: drop, len: stripLength(3, drop) })
         return list
     }
-    property int dragCfg: 0                  // index into configs() of the layout shown while dragging
+    // Computed once per change of settings (not once per mouse move while dragging).
+    readonly property var layouts: configs()
+    property int dragCfg: 0                  // index into layouts of the layout shown while dragging
+    function snapLimit() { return Math.max(20, Math.round(dragLength / 5) * 5) }     // pointer limit, snapped to 5 px
+    function dragLayout() { return layouts[Math.min(dragCfg, layouts.length - 1)] }
     function dragFit() {
-        var cfgs = configs()
-        var c = cfgs[Math.min(dragCfg, cfgs.length - 1)]
+        var c = dragLayout()
         return { level: c.level, drop: c.drop }
     }
     function beginDrag(startLength) {
-        var cfgs = configs()
+        var cfgs = layouts
         var cur = computeFit()
         dragCfg = 0
         for (var i = 0; i < cfgs.length; ++i)
@@ -754,8 +764,8 @@ PlasmoidItem {
     // each step down only happens once the pointer has gone at least halfway from where the current
     // layout fits to where the next shorter one fits, so a small nudge never makes the strip jump.
     function dragStep() {
-        var cfgs = configs()
-        var limit = Math.max(20, Math.round(dragLength / 5) * 5)             // snap to 5 px
+        var cfgs = layouts
+        var limit = snapLimit()
         var fitIdx = cfgs.length - 1
         for (var i = 0; i < cfgs.length; ++i) if (cfgs[i].len <= limit) { fitIdx = i; break }
         if (fitIdx < dragCfg) dragCfg = fitIdx                               // a longer layout fits: grow
@@ -770,9 +780,7 @@ PlasmoidItem {
     }
     // The limit that would be saved right now: what is on screen, never shorter than the shown layout.
     function dragMax() {
-        var cfgs = configs()
-        var limit = Math.max(20, Math.round(dragLength / 5) * 5)
-        var v = Math.max(limit, cfgs[Math.min(dragCfg, cfgs.length - 1)].len)
+        var v = Math.max(snapLimit(), dragLayout().len)
         return v >= stripLength(0, 0) ? 0 : v
     }
     function finishDrag() {
@@ -812,26 +820,18 @@ PlasmoidItem {
         for (var i = 0; i < keep; ++i) if (statGraph(ids[i])) graphVisible = true
         var inlineOff = graphInline && !inlineGraphsAt(fit.level) && graphVisible
         var dropped = ids.slice(keep).join(",")
-        var cfg = Plasmoid.configuration
-        if (cfg.lengthLevel !== fit.level) cfg.lengthLevel = fit.level
-        if (cfg.lengthDropped !== dropped) cfg.lengthDropped = dropped
-        if (cfg.lengthInlineOff !== inlineOff) cfg.lengthInlineOff = inlineOff
+        setCfg("lengthLevel", fit.level)
+        setCfg("lengthDropped", dropped)
+        setCfg("lengthInlineOff", inlineOff)
     }
     // Run after the current round of binding updates has settled.
     onFitChanged: Qt.callLater(syncLengthInfo)
     onDraggingChanged: Qt.callLater(syncLengthInfo)
     Component.onCompleted: Qt.callLater(syncLengthInfo)
 
-    function cellShown(id) { return statShown(id) && droppedIds.indexOf(id) < 0 }
-    function anyCellBefore(id) {
-        for (var i = 0; i < statOrder.length && statOrder[i] !== id; ++i)
-            if (cellShown(statOrder[i])) return true
-        return false
-    }
-    function anyCell() {
-        for (var i = 0; i < statOrder.length; ++i) if (cellShown(statOrder[i])) return true
-        return false
-    }
+    function cellShown(id) { return visibleIds.indexOf(id) >= 0 }
+    function anyCellBefore(id) { return visibleIds.indexOf(id) > 0 }
+    function anyCell() { return visibleIds.length > 0 }
 
     preferredRepresentation: compactRepresentation
     toolTipMainText: "System stats"
@@ -884,7 +884,6 @@ PlasmoidItem {
             id: cell
             property string statId
             readonly property bool fan: statId === "fan"       // show the spinning fan icon before the text
-            readonly property int fanLevel: root.fanLevel
             readonly property color textColor: root.statTextColor(statId)
             readonly property var history: root.statHistory(statId)
             readonly property var history2: root.statHistory2(statId)
@@ -924,7 +923,7 @@ PlasmoidItem {
                 FanIcon {
                     visible: cell.fan
                     Layout.alignment: Qt.AlignCenter
-                    level: cell.fanLevel
+                    level: root.fanLevel
                     animate: root.fanAnimate
                     color: cell.textColor
                 }
@@ -943,7 +942,7 @@ PlasmoidItem {
                     visible: cell.inline
                     Layout.alignment: Qt.AlignCenter
                     Layout.fillWidth: compact.vertical
-                    Layout.preferredWidth: compact.vertical ? -1 : Kirigami.Units.gridUnit * 4
+                    Layout.preferredWidth: compact.vertical ? -1 : root.inlineGraphWidth
                     Layout.preferredHeight: Kirigami.Units.gridUnit * (compact.vertical ? 1 : 1.2)
                     history: cell.inline ? cell.history : null
                     history2: cell.inline ? cell.history2 : null
@@ -977,11 +976,13 @@ PlasmoidItem {
                     Layout.fillHeight: !compact.vertical
 
                     Divider { visible: root.anyCellBefore(slot.modelData) }
-                    MetricCell {
-                        statId: slot.modelData
+                    // Built only while the stat is shown, so hidden stats cost no charts or icons.
+                    Loader {
+                        active: root.cellShown(slot.modelData)
                         Layout.alignment: Qt.AlignCenter
                         Layout.fillWidth: true          // text stays centred between the dividers
                         Layout.fillHeight: !compact.vertical
+                        sourceComponent: MetricCell { statId: slot.modelData }
                     }
                 }
             }
@@ -1092,10 +1093,20 @@ PlasmoidItem {
         PlasmaComponents.Label { text: popupRow.name; Layout.preferredWidth: root.popupLabelWidth }
         PlasmaComponents.Label { text: popupRow.value; font.bold: true; color: popupRow.valueColor }
     }
-    // A graph under a stat's rows.
+    // A graph under a stat's rows. Its data, scale and colours come from the same helpers the panel uses.
     component PopupGraph: Spark {
+        id: pg
+        property string statId
+        property bool wanted: true                          // an extra condition (the temperature graph needs its row)
+        readonly property bool on: wanted && root.statPopupGraph(statId)
         Layout.fillWidth: true
         Layout.preferredHeight: Kirigami.Units.gridUnit * 2
+        visible: on && history !== null
+        history: on ? root.statHistory(statId) : null
+        history2: on ? root.statHistory2(statId) : null
+        yFrom: root.statYFrom(statId)
+        yTo: root.statYTo(statId)
+        lineColor: root.statLineColor(statId)
     }
 
     function popupBlock(id) {
@@ -1115,10 +1126,7 @@ PlasmoidItem {
         id: cpuBlock
         ColumnLayout {
             PopupRow { name: "CPU usage"; value: root.pct(cpuUsage.value) }
-            PopupGraph {
-                visible: root.gdCpu && root.cpuHist !== null
-                history: root.gdCpu ? root.cpuHist : null
-            }
+            PopupGraph { statId: "cpu" }
         }
     }
     Component {
@@ -1128,10 +1136,7 @@ PlasmoidItem {
                 name: "Memory"
                 value: root.gib(memUsed.value) + " / " + root.gib(memTotal.value) + " (" + root.pct(memPercent.value) + ")"
             }
-            PopupGraph {
-                visible: root.gdRam && root.ramHist !== null
-                history: root.gdRam ? root.ramHist : null
-            }
+            PopupGraph { statId: "ram" }
         }
     }
     Component {
@@ -1139,11 +1144,7 @@ PlasmoidItem {
         ColumnLayout {
             PopupRow { name: "CPU frequency"; value: root.freq(freqAvg.value) }
             PopupRow { name: "Min / max"; value: root.ghzNumber(freqMin.value) + " / " + root.ghzNumber(freqMax.value) + " GHz" }
-            PopupGraph {
-                visible: root.gdFreq && root.freqHist !== null
-                history: root.gdFreq ? root.freqHist : null
-                yTo: root.freqPeak
-            }
+            PopupGraph { statId: "freq" }
         }
     }
     Component {
@@ -1151,12 +1152,7 @@ PlasmoidItem {
         ColumnLayout {
             PopupRow { name: "Download"; value: root.rate(netDown.value) + "  (" + root.bytesText(netDownTotal.value) + " total)" }
             PopupRow { name: "Upload"; value: root.rate(netUp.value) + "  (" + root.bytesText(netUpTotal.value) + " total)" }
-            PopupGraph {
-                visible: root.gdNet && root.netDownHist !== null
-                history: root.gdNet ? root.netDownHist : null
-                history2: root.gdNet ? root.netUpHist : null
-                yTo: root.netPeak
-            }
+            PopupGraph { statId: "net" }
         }
     }
     Component {
@@ -1165,7 +1161,7 @@ PlasmoidItem {
             PopupRow {
                 name: "Battery"
                 value: root.batText() + (root.isNum(root.batEnergyTotal()) ? "  (" + root.wh(root.batEnergyTotal()) + ")" : "")
-                valueColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                valueColor: root.statTextColor("bat")
             }
             // One line per battery, only when "each battery separately" is chosen.
             Repeater {
@@ -1185,11 +1181,7 @@ PlasmoidItem {
                 name: root.batState > 0 ? "Charging" : "Discharging"
                 value: root.batTimeText() !== "" ? root.batTimeText() + (root.batState > 0 ? " to full" : " left") : "estimating…"
             }
-            PopupGraph {
-                visible: root.gdBat && root.batHist !== null
-                history: root.gdBat ? root.batHist : null
-                lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
-            }
+            PopupGraph { statId: "bat" }
         }
     }
     Component {
@@ -1207,11 +1199,7 @@ PlasmoidItem {
                     PlasmaComponents.Label { text: root.rpmText(root.fanRpm); font.bold: true }
                 }
             }
-            PopupGraph {
-                visible: root.gdFan && root.fanHist !== null
-                history: root.gdFan ? root.fanHist : null
-                yTo: root.fanPeak
-            }
+            PopupGraph { statId: "fan" }
         }
     }
     Component {
@@ -1221,15 +1209,9 @@ PlasmoidItem {
                 visible: root.popupTempAvg
                 name: "CPU temp (avg)"
                 value: root.temp(tempAvg.value)
-                valueColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                valueColor: root.statTextColor("temp")
             }
-            PopupGraph {
-                visible: root.gdTemp && root.popupTempAvg && root.tempHist !== null
-                history: (root.gdTemp && root.popupTempAvg) ? root.tempHist : null
-                yFrom: root.tempYMin
-                yTo: root.tempYMax
-                lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
-            }
+            PopupGraph { statId: "temp"; wanted: root.popupTempAvg }
             PopupRow {
                 visible: root.popupTempMax
                 name: "CPU temp (max core)"

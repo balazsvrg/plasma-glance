@@ -167,19 +167,39 @@ KCM.SimpleKCM {
     readonly property real pad: Kirigami.Units.smallSpacing * 2      // inside the table's outline
     readonly property color outlineColor: Qt.alpha(Kirigami.Theme.textColor, 0.3)
 
-    // A checkbox cell tied to a setting by name, centred under its column header; the Binding keeps
-    // the box in step after the user clicks it.
-    component CfgCheck: Item {
+    // A checkbox centred under a column header. It shows `value` and reports a click through
+    // toggledTo(on); the Binding keeps the box in step with `value` after the user clicks it.
+    component CheckCell: Item {
         id: cell
-        property string key
+        property bool value
+        signal toggledTo(bool on)
         Layout.preferredWidth: page.checkWidth
         implicitHeight: box.implicitHeight
         QQC2.CheckBox {
             id: box
             anchors.centerIn: parent
-            onToggled: page.cfgSet(cell.key, checked)
-            Binding { target: box; property: "checked"; value: page.cfgGet(cell.key) }
+            onToggled: cell.toggledTo(checked)
+            Binding { target: box; property: "checked"; value: cell.value }
         }
+    }
+    // A checkbox cell tied to a setting by name.
+    component CfgCheck: CheckCell {
+        id: cfgCell
+        property string key
+        value: page.cfgGet(key)
+        onToggledTo: function (on) { page.cfgSet(cfgCell.key, on) }
+    }
+    // An indented popup-only row under a stat (its checkbox sits in the "popup show" column).
+    component SubRow: RowLayout {
+        id: sub
+        property string label
+        property string key
+        spacing: page.gap
+        Item { Layout.preferredWidth: page.handleWidth }
+        QQC2.Label { text: sub.label; opacity: 0.8; leftPadding: Kirigami.Units.gridUnit; Layout.preferredWidth: page.nameWidth }
+        Item { Layout.preferredWidth: page.checkWidth }
+        Item { Layout.preferredWidth: page.checkWidth }
+        CfgCheck { key: sub.key }
     }
     // A plain labelled checkbox tied to a setting by name.
     component CfgCheckLabelled: QQC2.CheckBox {
@@ -366,24 +386,8 @@ KCM.SimpleKCM {
                                 }
 
                                 // Popup-only details of the temperature stat; they move with it.
-                                RowLayout {
-                                    visible: slot.statId === "temp"
-                                    spacing: page.gap
-                                    Item { Layout.preferredWidth: page.handleWidth }
-                                    QQC2.Label { text: i18n("Hottest core"); opacity: 0.8; leftPadding: Kirigami.Units.gridUnit; Layout.preferredWidth: page.nameWidth }
-                                    Item { Layout.preferredWidth: page.checkWidth }
-                                    Item { Layout.preferredWidth: page.checkWidth }
-                                    CfgCheck { key: "popupTempMax" }
-                                }
-                                RowLayout {
-                                    visible: slot.statId === "temp"
-                                    spacing: page.gap
-                                    Item { Layout.preferredWidth: page.handleWidth }
-                                    QQC2.Label { text: i18n("Per-core temperatures"); opacity: 0.8; leftPadding: Kirigami.Units.gridUnit; Layout.preferredWidth: page.nameWidth }
-                                    Item { Layout.preferredWidth: page.checkWidth }
-                                    Item { Layout.preferredWidth: page.checkWidth }
-                                    CfgCheck { key: "popupCores" }
-                                }
+                                SubRow { visible: slot.statId === "temp"; label: i18n("Hottest core"); key: "popupTempMax" }
+                                SubRow { visible: slot.statId === "temp"; label: i18n("Per-core temperatures"); key: "popupCores" }
                             }
                         }
                     }
@@ -398,27 +402,9 @@ KCM.SimpleKCM {
                     Item { Layout.preferredWidth: page.handleWidth }
                     QQC2.Label { text: i18n("All graphs"); font.bold: true; Layout.preferredWidth: page.nameWidth }
                     Item { Layout.preferredWidth: page.checkWidth }
-                    Item {
-                        Layout.preferredWidth: page.checkWidth
-                        implicitHeight: allPanelBox.implicitHeight
-                        QQC2.CheckBox {
-                            id: allPanelBox
-                            anchors.centerIn: parent
-                            onToggled: page.setAllGraphs(false, checked)
-                            Binding { target: allPanelBox; property: "checked"; value: page.allGraphs(false) }
-                        }
-                    }
+                    CheckCell { value: page.allGraphs(false); onToggledTo: function (on) { page.setAllGraphs(false, on) } }
                     Item { Layout.preferredWidth: page.checkWidth }
-                    Item {
-                        Layout.preferredWidth: page.checkWidth
-                        implicitHeight: allPopupBox.implicitHeight
-                        QQC2.CheckBox {
-                            id: allPopupBox
-                            anchors.centerIn: parent
-                            onToggled: page.setAllGraphs(true, checked)
-                            Binding { target: allPopupBox; property: "checked"; value: page.allGraphs(true) }
-                        }
-                    }
+                    CheckCell { value: page.allGraphs(true);  onToggledTo: function (on) { page.setAllGraphs(true, on) } }
                 }
             }
         }
