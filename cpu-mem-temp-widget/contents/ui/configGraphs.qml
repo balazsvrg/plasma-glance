@@ -55,12 +55,5 @@ KCM.SimpleKCM {
             property: "currentIndex"
             value: Math.max(0, historyBox.indexOfValue(page.cfg_historySeconds))
         }
-
-        QQC2.Label {
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 20
-            wrapMode: Text.WordWrap
-            opacity: 0.7
-            text: i18n("History is collected only while a graph is turned on.")
-        }
     }
 }
