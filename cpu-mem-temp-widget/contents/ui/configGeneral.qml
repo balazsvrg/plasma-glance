@@ -43,8 +43,14 @@ KCM.SimpleKCM {
             id: unitBox
             Kirigami.FormData.label: i18n("Temperature unit:")
             model: ["°C", "°F"]
-            currentIndex: page.cfg_useFahrenheit ? 1 : 0
             onActivated: page.cfg_useFahrenheit = (currentIndex === 1)
+        }
+        // A Binding element survives user input, unlike a plain currentIndex
+        // binding, so "Defaults" and external changes keep updating the box.
+        Binding {
+            target: unitBox
+            property: "currentIndex"
+            value: page.cfg_useFahrenheit ? 1 : 0
         }
 
         QQC2.SpinBox {

@@ -26,7 +26,11 @@ PlasmoidItem {
     Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs }
 
     // ---- formatting helpers ----
-    function isNum(v) { return v !== undefined && v !== null && !isNaN(v) }
+    // Accepts any real numeric value; rejects undefined, null, "" and NaN so a
+    // missing sensor shows "--" instead of a fake 0.
+    function isNum(v) {
+        return v !== undefined && v !== null && v !== "" && isFinite(Number(v))
+    }
     function pct(v)   { return isNum(v) ? Math.round(v) + "%" : "--%" }
     function temp(v) {
         var unit = useF ? "°F" : "°C"
@@ -35,12 +39,22 @@ PlasmoidItem {
     }
     function gib(v)   { return isNum(v) ? (v / 1073741824).toFixed(1) + " GiB" : "-- GiB" }
 
+    // Each temperature is highlighted by its own value, so the colour always
+    // matches the number shown next to it.
+    readonly property bool avgHot: isNum(tempAvg.value) && tempAvg.value >= warnTempC
     readonly property bool tempHot: isNum(tempMax.value) && tempMax.value >= warnTempC
+
+    function tooltipText() {
+        var parts = []
+        if (showCpu)  parts.push("CPU " + pct(cpuUsage.value))
+        if (showRam)  parts.push("RAM " + pct(memPercent.value))
+        if (showTemp) parts.push(temp(tempAvg.value))
+        return parts.join(" · ")
+    }
 
     preferredRepresentation: compactRepresentation
     toolTipMainText: "System stats"
-    toolTipSubText: "CPU " + pct(cpuUsage.value) + " · RAM " + pct(memPercent.value)
-                    + " · " + temp(tempAvg.value)
+    toolTipSubText: tooltipText()
 
     compactRepresentation: MouseArea {
         id: compact
@@ -109,7 +123,7 @@ PlasmoidItem {
                 fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
                 minimumPixelSize: 8
                 text: compact.vertical ? "Temp\n" + root.temp(tempAvg.value) : root.temp(tempAvg.value)
-                color: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                color: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
             }
             PlasmaComponents.Label {
                 visible: !root.showCpu && !root.showRam && !root.showTemp
@@ -135,7 +149,11 @@ PlasmoidItem {
         }
 
         PlasmaComponents.Label { text: "CPU temp (avg)" }
-        PlasmaComponents.Label { text: root.temp(tempAvg.value); font.bold: true }
+        PlasmaComponents.Label {
+            text: root.temp(tempAvg.value)
+            font.bold: true
+            color: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+        }
 
         PlasmaComponents.Label { text: "CPU temp (max core)" }
         PlasmaComponents.Label {

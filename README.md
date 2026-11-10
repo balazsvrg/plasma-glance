@@ -10,7 +10,7 @@ CPU 4%  |  RAM 30%  |  35°C
 - Horizontal panels: one line, thin dividers spanning the panel height.
 - Vertical panels: three captioned blocks (`CPU` over `4%`), text shrinks to fit.
 - Click for a popup with used / total memory and average and max core temperature.
-- Temperature turns red above a configurable threshold.
+- Each temperature turns red when it reaches the configurable threshold.
 - Pure QML. No native code, no background processes: values come from KDE's own
   sensor service (`org.kde.ksysguard.sensors`).
 
