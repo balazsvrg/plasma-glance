@@ -12,7 +12,9 @@ when any check fails. What it checks:
   4. the structure: unique ids, labels, sensor ids, and every settings key of main.xml accounted for;
   5. the registry against tests/golden/panel_text.json: the panel text the hand-written code of release
      v0.9.1 produced for every stat, kind, orientation and unit mode over a grid of values (regenerate it
-     only on purpose, see tests/golden/generate.py).
+     only on purpose, see tests/golden/generate.py);
+  6. the registry against tests/golden/scales.json: the alerts, colours, graph scales and the peak sequences
+     (freq, net, fan) of the same code.
 """
 import json
 import os
@@ -398,6 +400,97 @@ for p, st, en, want in GOLDEN["popupBattery"]:
     bad += got != want
 check("popup battery row", bad == 0, "%d mismatches" % bad)
 check("golden data was compared (%d values)" % compared, compared > 5000)
+
+# ---------------------------------------------------------------- 6. golden alerts, colours, scales and peaks
+print("6. registry against the golden alerts, scales and peaks (tests/golden/scales.json)")
+SC = json.load(open(os.path.join(ROOT, "tests", "golden", "scales.json"), encoding="utf-8"))
+STATS = run(M, "DEFAULT_ORDER")
+compared = 0
+M.evaluate("function alertOf(id, vals, warn) { var m = byId(id); return !!(m && m.alert && m.alert(vals, { warnTempC: warn })) }")
+M.evaluate("function alerting(vals, warn) { return DEFAULT_ORDER.filter(function (id) { return alertOf(id, vals, warn) }) }")
+
+
+def jsarr(rows):
+    return "[" + ",".join("[" + ",".join(str(x) for x in r) + "]" for r in rows) + "]"
+
+
+# Temperature. avgHot is the temp alert; tempHot is the popup's "max core" row alert.
+temp_in = jsarr([[r[0], r[1]] for r in SC["temp"]])
+got = run(M, "%s.map(function(r){var w=r[0],v=r[1];return [alertOf('temp',{value:v},w),byId('temp').popup.rows[1].alert({max:v},{warnTempC:w})]})" % temp_in)
+equal("avgHot / tempHot over warn x value", got, [[r[2], r[3]] for r in SC["temp"]])
+got = run(M, "%s.map(function(r){var w=r[0],v=r[1];return alerting({value:v},w)})" % temp_in)
+equal("the alerting stats over warn x value", got, [r[4] for r in SC["temp"]])
+compared += 2 * len(got)
+# Colours: the alert picks the negative colour (the colour names are the stand-ins of the golden run).
+want_color = lambda alert, normal: "NEG" if alert else normal
+equal("temp text / line colour follow the alert",
+      [[want_color(r[4] and "temp" in r[4], "TEXT"), want_color(r[4] and "temp" in r[4], "HIGHLIGHT")] for r in SC["temp"]],
+      [[r[5], r[6]] for r in SC["temp"]])
+
+# Battery.
+bat_in = jsarr([[r[0], r[1]] for r in SC["bat"]])
+got = run(M, "%s.map(function(r){return [alertOf('bat',{percent:r[0],state:r[1]},80),alerting({percent:r[0],state:r[1]},80)]})" % bat_in)
+equal("batLow over percent x state", [g[0] for g in got], [r[2] for r in SC["bat"]])
+equal("the alerting stats over percent x state", [g[1] for g in got], [r[3] for r in SC["bat"]])
+equal("bat colours follow the alert", [[want_color(r[2], "TEXT"), want_color(r[2], "HIGHLIGHT")] for r in SC["bat"]],
+      [[r[4], r[5]] for r in SC["bat"]])
+compared += len(got)
+
+# Both at once: per stat [alert, text colour, line colour].
+for t, p, st, per in SC["all"]:
+    al = run(M, "alerting({value:%s,percent:%s,state:%d},80)" % (t, p, st))
+    got = {x: [x in al, "NEG" if x in al else "TEXT", "NEG" if x in al else "HIGHLIGHT"] for x in STATS}
+    compared += len(STATS)
+    equal("alerts and colours of every stat (temp=%s bat=%s/%d)" % (t, p, st), got, per)
+
+# Scale range of every stat.
+for warn, per in SC["range by warn"]:
+    got = {x: [run(M, "byId('%s').scale.from" % x), run(M, "scaleTo(byId('%s'),{warnTempC:%r})" % (x, warn)) if x not in ("freq", "net", "fan") else "peak"]
+           for x in STATS}
+    want = {x: [v[0], v[1] if x not in ("freq", "net", "fan") else "peak"] for x, v in per.items()}
+    compared += len(STATS)
+    equal("scale range at warn %r" % warn, got, want)
+for peaks, per in SC["range by peak"]:
+    got = {x: run(M, "byId('%s').scale.from" % x) for x in STATS}
+    equal("scale start at peaks %r" % peaks, got, {x: v[0] for x, v in per.items()})
+    # a following scale ends at its peak
+    equal("a following scale is the peak (freq, net, fan) at %r" % peaks,
+          [per["freq"][1], per["net"][1], per["fan"][1]], peaks)
+    compared += len(STATS)
+
+# Peak sequences.
+def jsval(v):
+    return v
+
+
+def peak_run(stat, steps, bar=False, graph=True):
+    """The registry's scale stepped through `steps` the way main.qml's handlers do it."""
+    sc = "byId('%s').scale" % stat
+    out, prev = [], run(M, "%s.floor" % sc)
+    for step in steps:
+        if stat == "net":
+            d, u, ms = step
+            # the net scale only follows the data while a graph needs it; bars stack download and upload
+            if graph:
+                seen = ("(isNum(%s)?Number(%s):0)+(isNum(%s)?Number(%s):0)" if bar else "Math.max(isNum(%s)?Number(%s):0,isNum(%s)?Number(%s):0)") % (d, d, u, u)
+                prev = run(M, "nextPeak(%s,%r,%s,%d)" % (sc, prev, seen, ms))
+        else:
+            prev = run(M, "nextPeak(%s,%r,%s,1000)" % (sc, prev, step))
+        out.append(prev)
+    return out
+
+
+for key, want in sorted(SC["peaks"]["net"].items()):
+    style, flags, name = key.split("|")
+    got = peak_run("net", SC["sequences"]["net"][name], bar=(style == "bar"), graph="gp=0 gd=0" not in flags)
+    compared += len(want)
+    equal("net peak %s" % key, got, want)
+for stat in ("freq", "fan"):
+    for name, want in sorted(SC["peaks"][stat].items()):
+        got = peak_run(stat, SC["sequences"][stat][name])
+        compared += len(want)
+        equal("%s peak, sequence '%s'" % (stat, name), got, want)
+check("scale golden data was compared (%d values)" % compared, compared > 3000)
 
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))
