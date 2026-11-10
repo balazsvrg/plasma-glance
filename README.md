@@ -46,6 +46,7 @@ Right-click the widget in the panel and choose **Configure…**. There are three
 | Temperature unit | °C |
 | Network speed unit: bytes (MB/s) or bits (Mb/s) | bytes |
 | Warning threshold (always entered in °C) | 80 |
+| Maximum length (px) of the panel strip; 0 = no limit | no limit |
 | Refresh interval | 1000 ms (min 250) |
 
 **Metrics**: one row per stat. Each stat has four checkboxes: whether it is **shown** in the
@@ -92,6 +93,20 @@ charging. The popup shows energy held, state and the time estimate (to full, or 
 Graph history is collected only for stats that a graph shows, and starts once that stat's
 sensor reports a real value, so a missing sensor never blocks the other graphs. The graphs span the samples collected so far and then scroll.
 On a vertical panel, "inline" puts the graph below the text.
+
+**Maximum length** limits the strip along the panel (width on a horizontal panel, height on a
+vertical one). When the strip would be longer, it saves space in steps and stops at the first step
+that fits:
+
+1. Inline graphs become behind-text graphs, which take no length.
+2. Compact text, still readable: `CPU 8%` becomes `C 8%`, `RAM` becomes `R`, `2.2 GHz` becomes
+   `2.2G`, `↓4.5 MB/s ↑3 KB/s` becomes `↓4.5M ↑3K`, `BAT 14% ↑` becomes `B 14%↑`, `2400 RPM`
+   becomes `2400` next to the fan icon.
+3. Tighter spacing.
+4. If it still does not fit, stats are dropped from the end of the strip (Fan, Battery, Network,
+   Frequency, Temperature, Memory). CPU is never dropped.
+
+The tooltip always lists every stat, including dropped ones. With the limit at 0 nothing changes.
 
 ## Develop
 

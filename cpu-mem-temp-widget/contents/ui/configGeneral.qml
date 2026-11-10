@@ -12,11 +12,13 @@ KCM.SimpleKCM {
     property bool cfg_netBits
     property alias cfg_warnTemp: warnTemp.value
     property alias cfg_refreshMs: refreshMs.value
+    property alias cfg_maxLength: maxLength.value
 
     property bool cfg_useFahrenheitDefault
     property bool cfg_netBitsDefault
     property int cfg_warnTempDefault
     property int cfg_refreshMsDefault
+    property int cfg_maxLengthDefault
 
     Kirigami.FormLayout {
         QQC2.ComboBox {
@@ -51,6 +53,21 @@ KCM.SimpleKCM {
             from: 30
             to: 120
             stepSize: 5
+        }
+
+        QQC2.SpinBox {
+            id: maxLength
+            Kirigami.FormData.label: i18n("Maximum length (px):")
+            from: 0
+            to: 5000
+            stepSize: 10
+            editable: true
+            // Along the panel: width on a horizontal panel, height on a vertical one.
+            textFromValue: function (value) { return value === 0 ? i18n("No limit") : String(value) }
+            valueFromText: function (text) {
+                var n = parseInt(text)
+                return isNaN(n) ? 0 : Math.max(0, Math.min(5000, n))
+            }
         }
 
         QQC2.SpinBox {

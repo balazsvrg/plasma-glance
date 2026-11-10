@@ -492,6 +492,172 @@ PlasmoidItem {
         return parts.join(" · ")
     }
 
+    // ---- maximum length ----
+    // Along the panel direction: width on a horizontal panel, height on a vertical one.
+    // When the strip would be longer than the limit it saves space in steps and stops at
+    // the first step that fits:
+    //   0  full text, graphs as chosen
+    //   1  inline graphs become behind-text graphs (those take no length)
+    //   2  compact text (CPU 8% -> C 8%, 2.2 GHz -> 2.2G, ...), still readable
+    //   3  tight spacing
+    // If even that is too long, stats are dropped from the end (Fan, Battery, Net, Freq,
+    // Temp, RAM) until it fits. CPU is never dropped. The tooltip always lists everything.
+    readonly property int maxLength: Plasmoid.configuration.maxLength       // px, 0 = no limit
+    readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
+    readonly property var statOrder: ["cpu", "ram", "temp", "freq", "net", "bat", "fan"]
+
+    function statShown(id) {
+        switch (id) {
+        case "cpu":  return showCpu
+        case "ram":  return showRam
+        case "temp": return showTemp
+        case "freq": return showFreq
+        case "net":  return showNet
+        case "bat":  return batShown
+        case "fan":  return fanShown
+        }
+        return false
+    }
+    function statGraph(id) {
+        switch (id) {
+        case "cpu":  return gpCpu
+        case "ram":  return gpRam
+        case "temp": return gpTemp
+        case "freq": return gpFreq
+        case "net":  return gpNet
+        case "bat":  return gpBat
+        case "fan":  return gpFan
+        }
+        return false
+    }
+    function shownIds() {
+        var ids = []
+        for (var i = 0; i < statOrder.length; ++i) if (statShown(statOrder[i])) ids.push(statOrder[i])
+        return ids
+    }
+
+    // Widest possible text per stat, so the strip does not resize when a number gains a digit.
+    TextMetrics { id: mCpu;   font: Kirigami.Theme.defaultFont; text: "CPU 100%" }
+    TextMetrics { id: mCpuC;  font: Kirigami.Theme.defaultFont; text: "C 100%" }
+    TextMetrics { id: mRam;   font: Kirigami.Theme.defaultFont; text: "RAM 100%" }
+    TextMetrics { id: mRamC;  font: Kirigami.Theme.defaultFont; text: "R 100%" }
+    TextMetrics { id: mTemp;  font: Kirigami.Theme.defaultFont; text: root.useF ? "212°F" : "100°C" }
+    TextMetrics { id: mTempC; font: Kirigami.Theme.defaultFont; text: root.useF ? "212°" : "100°" }
+    TextMetrics { id: mFreq;  font: Kirigami.Theme.defaultFont; text: "9.9 GHz" }
+    TextMetrics { id: mFreqC; font: Kirigami.Theme.defaultFont; text: "9.9G" }
+    TextMetrics { id: mNet;   font: Kirigami.Theme.defaultFont; text: "↓999 MB/s ↑999 MB/s" }
+    TextMetrics { id: mNetC;  font: Kirigami.Theme.defaultFont; text: "↓999M ↑999M" }
+    TextMetrics { id: mBat;   font: Kirigami.Theme.defaultFont; text: "BAT 100% ↓" }
+    TextMetrics { id: mBatC;  font: Kirigami.Theme.defaultFont; text: "B 100%↓" }
+    TextMetrics { id: mFan;   font: Kirigami.Theme.defaultFont; text: "9999 RPM" }
+    TextMetrics { id: mFanC;  font: Kirigami.Theme.defaultFont; text: "9999" }
+    TextMetrics { id: mLine;  font: Kirigami.Theme.defaultFont; text: "Ag" }       // one line of text
+
+    function reservedWidth(id, compact) {
+        switch (id) {
+        case "cpu":  return compact ? mCpuC.width  : mCpu.width
+        case "ram":  return compact ? mRamC.width  : mRam.width
+        case "temp": return compact ? mTempC.width : mTemp.width
+        case "freq": return compact ? mFreqC.width : mFreq.width
+        case "net":  return compact ? mNetC.width  : mNet.width
+        case "bat":  return compact ? mBatC.width  : mBat.width
+        case "fan":  return compact ? mFanC.width  : mFan.width
+        }
+        return 0
+    }
+
+    function tempShort(v) {
+        if (!isNum(v)) return "--°"
+        return Math.round(useF ? v * 9 / 5 + 32 : v) + "°"
+    }
+    function freqShort(v) {
+        if (!isNum(v)) return "--G"
+        return v >= 1000 ? (v / 1000).toFixed(1) + "G" : Math.round(v) + "M"
+    }
+    function batArrowShort() { return batState > 0 ? "↑" : (batState < 0 ? "↓" : "") }
+    function rpmNumber(v) { return isNum(v) ? String(Math.round(Number(v))) : "--" }
+
+    // The text of a stat in the panel, for the current step (compact or full) and orientation.
+    function statText(id, compact, vert) {
+        switch (id) {
+        case "cpu":
+            return compact ? "C " + pct(cpuUsage.value) : (vert ? "CPU\n" : "CPU ") + pct(cpuUsage.value)
+        case "ram":
+            return compact ? "R " + pct(memPercent.value) : (vert ? "RAM\n" : "RAM ") + pct(memPercent.value)
+        case "temp":
+            return compact ? tempShort(tempAvg.value) : (vert ? "Temp\n" : "") + temp(tempAvg.value)
+        case "freq":
+            return compact ? freqShort(freqAvg.value) : (vert ? "Freq\n" : "") + freq(freqAvg.value)
+        case "net":
+            if (compact) return "↓" + rateShort(netDown.value) + (vert ? "\n↑" : " ↑") + rateShort(netUp.value)
+            return vert ? "Net\n↓" + rateShort(netDown.value) + "\n↑" + rateShort(netUp.value) : netText()
+        case "bat":
+            return compact ? "B " + pct(batPercent) + batArrowShort() : (vert ? "Bat\n" : "BAT ") + batText()
+        case "fan":
+            return compact ? rpmNumber(fanRpm) : (vert ? "Fan\n" + rpmNumber(fanRpm) : rpmText(fanRpm))
+        }
+        return ""
+    }
+
+    // Space one stat takes at a given step (width when horizontal, height when vertical).
+    function cellLength(id, level) {
+        var compact = level >= 2
+        var inlineGraph = level === 0 && graphInline && statGraph(id)
+        var gap = Kirigami.Units.smallSpacing
+        if (!vertical) {
+            var w = reservedWidth(id, compact)
+            if (id === "fan") w += Kirigami.Units.iconSizes.smallMedium + gap
+            if (inlineGraph) w += gap + Kirigami.Units.gridUnit * 4
+            return w
+        }
+        var lines = (id === "net" ? 2 : 1) + (compact ? 0 : 1)          // value lines (+ caption line)
+        var h = lines * mLine.height
+        if (id === "fan") h += Kirigami.Units.iconSizes.smallMedium
+        if (inlineGraph) h += Kirigami.Units.gridUnit
+        return h
+    }
+    function spacingFor(level) {
+        return level >= 3 ? Kirigami.Units.smallSpacing : Kirigami.Units.largeSpacing
+    }
+    function rowSpacingFor(level) {
+        return level >= 3 ? 0 : Kirigami.Units.smallSpacing
+    }
+    // Length of the strip at a step, with the last `drop` stats removed.
+    function stripLength(level, drop) {
+        var ids = shownIds()
+        var n = ids.length - drop
+        if (n <= 0) return 0
+        var total = 0
+        for (var i = 0; i < n; ++i) total += cellLength(ids[i], level)
+        var gap = vertical ? rowSpacingFor(level) : spacingFor(level)
+        // a 1 px divider and two gaps between stats; rounded up so rounding never lets it exceed the limit
+        return Math.ceil(total + (n - 1) * (1 + 2 * gap))
+    }
+    function computeFit() {
+        var ids = shownIds()
+        if (maxLength <= 0 || ids.length === 0) return { level: 0, drop: 0 }
+        for (var level = 0; level <= 3; ++level)
+            if (stripLength(level, 0) <= maxLength) return { level: level, drop: 0 }
+        for (var drop = 1; drop < ids.length; ++drop)
+            if (stripLength(3, drop) <= maxLength) return { level: 3, drop: drop }
+        return { level: 3, drop: ids.length - 1 }                         // only the first stat is left
+    }
+    readonly property var fit: computeFit()
+    readonly property int lengthLevel: fit.level
+    readonly property bool textCompact: lengthLevel >= 2
+    readonly property var droppedIds: shownIds().slice(shownIds().length - fit.drop)
+
+    function cellShown(id) { return statShown(id) && droppedIds.indexOf(id) < 0 }
+    function anyCellBefore(id) {
+        for (var i = 0; i < statOrder.length && statOrder[i] !== id; ++i)
+            if (cellShown(statOrder[i])) return true
+        return false
+    }
+    function anyCell() {
+        for (var i = 0; i < statOrder.length; ++i) if (cellShown(statOrder[i])) return true
+        return false
+    }
+
     preferredRepresentation: compactRepresentation
     toolTipMainText: "System stats"
     toolTipSubText: tooltipText()
@@ -500,23 +666,13 @@ PlasmoidItem {
         id: compact
         onClicked: root.expanded = !root.expanded
 
-        readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
+        readonly property bool vertical: root.vertical
 
         Layout.minimumWidth: vertical ? 0 : layout.implicitWidth
         Layout.minimumHeight: layout.implicitHeight
         Layout.preferredWidth: vertical ? -1 : layout.implicitWidth
         Layout.preferredHeight: layout.implicitHeight
         Layout.fillWidth: vertical
-
-        // Reserve the widest possible text per column so the widget does not
-        // resize (and jitter) when a value changes digit count.
-        TextMetrics { id: cpuMetrics;  font: Kirigami.Theme.defaultFont; text: "CPU 100%" }
-        TextMetrics { id: ramMetrics;  font: Kirigami.Theme.defaultFont; text: "RAM 100%" }
-        TextMetrics { id: tempMetrics; font: Kirigami.Theme.defaultFont; text: root.useF ? "212°F" : "100°C" }
-        TextMetrics { id: freqMetrics; font: Kirigami.Theme.defaultFont; text: "9.9 GHz" }
-        TextMetrics { id: netMetrics;  font: Kirigami.Theme.defaultFont; text: "↓999 MB/s ↑999 MB/s" }
-        TextMetrics { id: batMetrics;  font: Kirigami.Theme.defaultFont; text: "BAT 100% ↓" }
-        TextMetrics { id: fanMetrics;  font: Kirigami.Theme.defaultFont; text: "9999 RPM" }
 
         // Thin divider spanning the full panel thickness (full height on a
         // horizontal panel, full width on a vertical one).
@@ -529,17 +685,13 @@ PlasmoidItem {
             Layout.preferredHeight: compact.vertical ? 1 : -1
         }
 
-        // One metric in the panel: the text plus an optional graph, drawn either
-        // behind the text (style 1) or after it (style 2; below it when vertical).
+        // One metric in the panel: its text (from root.statText, so the width calculation and
+        // the layout always agree) plus an optional graph, drawn behind the text or after it.
         component MetricCell: Item {
             id: cell
-            property string caption                 // vertical layout: "CPU" over the value
-            property string hPrefix: ""             // horizontal layout: "CPU " before the value
-            property string valueText
-            property string vValueText: ""          // optional different text for vertical panels
-            property bool fan: false                // show the spinning fan icon before the text
+            property string statId
+            readonly property bool fan: statId === "fan"       // show the spinning fan icon before the text
             property int fanLevel: 0
-            property real minLabelWidth: 0
             property color textColor: Kirigami.Theme.textColor
             property var history: null
             property var history2: null
@@ -547,10 +699,11 @@ PlasmoidItem {
             property real yTo: 100
             property color lineColor: Kirigami.Theme.highlightColor
 
-            property bool graphOn: false             // this stat's panel graph toggle
+            property bool graphOn: false                       // this stat's panel graph toggle
             readonly property bool hasGraph: graphOn && history !== null
-            readonly property bool behind: hasGraph && !root.graphInline
-            readonly property bool inline: hasGraph && root.graphInline
+            // Inline graphs take length, so they turn into behind-text graphs when space is short.
+            readonly property bool behind: hasGraph && (!root.graphInline || root.lengthLevel >= 1)
+            readonly property bool inline: hasGraph && root.graphInline && root.lengthLevel === 0
 
             implicitWidth: content.implicitWidth
             implicitHeight: content.implicitHeight
@@ -582,14 +735,13 @@ PlasmoidItem {
                 }
                 PlasmaComponents.Label {
                     Layout.alignment: Qt.AlignCenter
-                    Layout.minimumWidth: compact.vertical ? 0 : cell.minLabelWidth
-                    Layout.preferredWidth: compact.vertical ? -1 : cell.minLabelWidth
+                    Layout.minimumWidth: compact.vertical ? 0 : root.reservedWidth(cell.statId, root.textCompact)
+                    Layout.preferredWidth: compact.vertical ? -1 : root.reservedWidth(cell.statId, root.textCompact)
                     Layout.fillWidth: compact.vertical
                     horizontalAlignment: Text.AlignHCenter
                     fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
                     minimumPixelSize: 8
-                    text: compact.vertical ? cell.caption + "\n" + (cell.vValueText !== "" ? cell.vValueText : cell.valueText)
-                                           : cell.hPrefix + cell.valueText
+                    text: root.statText(cell.statId, root.textCompact, compact.vertical)
                     color: cell.textColor
                 }
                 Spark {
@@ -611,43 +763,35 @@ PlasmoidItem {
             id: layout
             anchors.fill: parent
             columns: compact.vertical ? 1 : 13
-            columnSpacing: Kirigami.Units.largeSpacing
-            rowSpacing: Kirigami.Units.smallSpacing
+            columnSpacing: root.spacingFor(root.lengthLevel)
+            rowSpacing: root.rowSpacingFor(root.lengthLevel)
 
             MetricCell {
-                visible: root.showCpu
+                statId: "cpu"
+                visible: root.cellShown("cpu")
                 Layout.alignment: Qt.AlignCenter
                 Layout.fillWidth: compact.vertical
                 Layout.fillHeight: !compact.vertical
-                caption: "CPU"
-                hPrefix: "CPU "
-                valueText: root.pct(cpuUsage.value)
-                minLabelWidth: cpuMetrics.width
                 graphOn: root.gpCpu
                 history: root.cpuHist
             }
-            Divider { visible: root.showRam && root.showCpu }
+            Divider { visible: root.cellShown("ram") && root.anyCellBefore("ram") }
             MetricCell {
-                visible: root.showRam
+                statId: "ram"
+                visible: root.cellShown("ram")
                 Layout.alignment: Qt.AlignCenter
                 Layout.fillWidth: compact.vertical
                 Layout.fillHeight: !compact.vertical
-                caption: "RAM"
-                hPrefix: "RAM "
-                valueText: root.pct(memPercent.value)
-                minLabelWidth: ramMetrics.width
                 graphOn: root.gpRam
                 history: root.ramHist
             }
-            Divider { visible: root.showTemp && (root.showCpu || root.showRam) }
+            Divider { visible: root.cellShown("temp") && root.anyCellBefore("temp") }
             MetricCell {
-                visible: root.showTemp
+                statId: "temp"
+                visible: root.cellShown("temp")
                 Layout.alignment: Qt.AlignCenter
                 Layout.fillWidth: compact.vertical
                 Layout.fillHeight: !compact.vertical
-                caption: "Temp"
-                valueText: root.temp(tempAvg.value)
-                minLabelWidth: tempMetrics.width
                 textColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                 graphOn: root.gpTemp
                 history: root.tempHist
@@ -655,67 +799,55 @@ PlasmoidItem {
                 yTo: root.tempYMax
                 lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
             }
-            Divider { visible: root.showFreq && (root.showCpu || root.showRam || root.showTemp) }
+            Divider { visible: root.cellShown("freq") && root.anyCellBefore("freq") }
             MetricCell {
-                visible: root.showFreq
+                statId: "freq"
+                visible: root.cellShown("freq")
                 Layout.alignment: Qt.AlignCenter
                 Layout.fillWidth: compact.vertical
                 Layout.fillHeight: !compact.vertical
-                caption: "Freq"
-                valueText: root.freq(freqAvg.value)
-                minLabelWidth: freqMetrics.width
                 graphOn: root.gpFreq
                 history: root.freqHist
                 yTo: root.freqPeak
             }
-            Divider { visible: root.showNet && (root.showCpu || root.showRam || root.showTemp || root.showFreq) }
+            Divider { visible: root.cellShown("net") && root.anyCellBefore("net") }
             MetricCell {
-                visible: root.showNet
+                statId: "net"
+                visible: root.cellShown("net")
                 Layout.alignment: Qt.AlignCenter
                 Layout.fillWidth: compact.vertical
                 Layout.fillHeight: !compact.vertical
-                caption: "Net"
-                valueText: root.netText()
-                vValueText: "↓" + root.rateShort(netDown.value) + "\n↑" + root.rateShort(netUp.value)
-                minLabelWidth: netMetrics.width
                 graphOn: root.gpNet
                 history: root.netDownHist
                 history2: root.netUpHist
                 yTo: root.netPeak
             }
-            Divider { visible: root.batShown && (root.showCpu || root.showRam || root.showTemp || root.showFreq || root.showNet) }
+            Divider { visible: root.cellShown("bat") && root.anyCellBefore("bat") }
             MetricCell {
-                visible: root.batShown
+                statId: "bat"
+                visible: root.cellShown("bat")
                 Layout.alignment: Qt.AlignCenter
                 Layout.fillWidth: compact.vertical
                 Layout.fillHeight: !compact.vertical
-                caption: "Bat"
-                hPrefix: "BAT "
-                valueText: root.batText()
-                minLabelWidth: batMetrics.width
                 textColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                 graphOn: root.gpBat
                 history: root.batHist
                 lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
             }
-            Divider { visible: root.fanShown && (root.showCpu || root.showRam || root.showTemp || root.showFreq || root.showNet || root.batShown) }
+            Divider { visible: root.cellShown("fan") && root.anyCellBefore("fan") }
             MetricCell {
-                visible: root.fanShown
+                statId: "fan"
+                visible: root.cellShown("fan")
                 Layout.alignment: Qt.AlignCenter
                 Layout.fillWidth: compact.vertical
                 Layout.fillHeight: !compact.vertical
-                caption: "Fan"
-                valueText: root.rpmText(root.fanRpm)
-                vValueText: root.isNum(root.fanRpm) ? String(Math.round(Number(root.fanRpm))) : "--"
-                minLabelWidth: fanMetrics.width
-                fan: true
                 fanLevel: root.fanLevel
                 graphOn: root.gpFan
                 history: root.fanHist
                 yTo: root.fanPeak
             }
             PlasmaComponents.Label {
-                visible: !root.showCpu && !root.showRam && !root.showTemp && !root.showFreq && !root.showNet && !root.batShown && !root.fanShown
+                visible: !root.anyCell()
                 Layout.alignment: Qt.AlignCenter
                 text: "–"
             }

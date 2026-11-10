@@ -48,6 +48,12 @@
             <label>Number of fans found (written by the widget, read by the settings pages)</label>
             <default>0</default>
         </entry>
+        <entry name="maxLength" type="Int">
+            <label>Maximum length of the panel strip in pixels along the panel (0 = no limit)</label>
+            <default>0</default>
+            <min>0</min>
+            <max>5000</max>
+        </entry>
         <entry name="useFahrenheit" type="Bool">
             <label>Show temperature in Fahrenheit</label>
             <default>false</default>
