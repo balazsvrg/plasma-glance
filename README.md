@@ -62,7 +62,7 @@ cd plasma-glance
 If you were given a `.plasmoid` file (or built one with `./package.sh`, see below):
 
 ```
-kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.8.3.plasmoid
+kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.9.0.plasmoid
 ```
 
 Use `-u` instead of `-i` to upgrade an installed copy. You can also do it from Plasma: right-click the
@@ -71,7 +71,7 @@ panel, choose **Add Widgets**, then **Get New Widgets > Install from Local File*
 To install it for every user on the machine, add `-g` and run the command as root:
 
 ```
-sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.8.3.plasmoid
+sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.9.0.plasmoid
 ```
 
 ### Then load it into Plasma
@@ -275,6 +275,12 @@ package.sh                      builds the .plasmoid into dist/
 ```
 
 ## Changelog
+
+**0.9.0**
+- New **Chart style** option on the Graphs tab: **Line** (the default, as before) or **Bar**. Bars use the
+  same scales and colours as the lines, and samples are merged so every bar stays at least 2 px wide. The
+  network graph shows download and upload as stacked bars.
+- When you switch from Line to Bar the graphs start empty and fill up over the history length.
 
 **0.8.3**
 - Light themes: the graphs (panel and popup) are drawn slightly darker so they keep their contrast on a
