@@ -169,7 +169,7 @@ check("the peak step is the registry's", "M.stepPeak(M.byId(id), prev, statVals(
 equal("literal peak triggers", sorted(re.findall(r'stepPeak\("(\w+)"\)', MAIN_QML)), ["fan"])
 check("fan steps from the fan speed", 'onFanRpmChanged: root.stepPeak("fan")' in MAIN_QML)
 check("the sensor delegate steps the peak of the stat whose scale names it",
-      "onValueChanged: if (M.byId(modelData.id).scale.trigger === modelData.name) root.stepPeak(modelData.id)" in MAIN_QML)
+      "M.byId(modelData.id).scale.trigger === modelData.name" in MAIN_QML and "onValueChanged: if (isTrigger) root.stepPeak(modelData.id)" in MAIN_QML)
 equal("triggers of the following scales", run(M, "METRICS.filter(followsData).map(function(m){return [m.id, m.scale.trigger]})"),
       [["freq", "max"], ["net", "down"], ["fan", None]])
 for sid in ("freq", "net"):
@@ -212,7 +212,7 @@ supplied = {sid: sorted(re.findall(r'(\w+):', body)) for sid, body in re.findall
 equal("statVals has its own case for exactly battery and fan", sorted(supplied), ["bat", "fan"])
 check("statVals falls back to the stat's sensors", "return sensorVals(id)" in sv_src)
 check("sensorVals names each value after its registry sensor",
-      "for (var name in M.byId(id).sensors) vals[name] = sensorValue(id, name)" in MAIN_QML)
+      "M.panelSensorNames(M.byId(id))" in MAIN_QML and "vals[names[i]] = sensorValue(id, names[i])" in MAIN_QML)
 for stat in run(M, "DEFAULT_ORDER"):
     used = run(M, "(function(){var p=byId(%s).panel, t=[p.full,p.compact].concat(p.vertical,p.verticalCompact||[]), k={}; "
                   "t.forEach(function(x){(x.match(/\\{(\\w+)/g)||[]).forEach(function(y){k[y.slice(1)]=1})}); return Object.keys(k).sort()})()" % json.dumps(stat))
@@ -396,7 +396,13 @@ equal("main.qml spells no registry sensor id itself (they come from the sensor d
 equal("the only sensorId literal left in main.qml is the per-core one", sorted(qml_ids), ["cpu/cpu"])
 check("the sensor delegate takes its id from the registry", "sensorId: entry.id" in MAIN_QML)
 check("the sensors come from the registry", "readonly property var sensorKinds: M.sensorKinds()" in MAIN_QML and "model: root.sensorKinds" in MAIN_QML)
-check("trigger sensors catch up once they all exist", "if (count === root.sensorKinds.length) root.stepTriggerPeaks()" in MAIN_QML)
+check("trigger sensors catch up once they all exist", "if (count !== root.sensorKinds.length) return" in MAIN_QML and "root.stepTriggerPeaks()" in MAIN_QML)
+check("the sensor map is built once, not per added sensor", MAIN_QML.count("root.sensorItems = sensorMap()") == 1 and "if (count !== root.sensorKinds.length) return\n            root.sensorItems = sensorMap()" in MAIN_QML)
+equal("panel values leave out the popup-only sensors", run(M, "METRICS.map(function(m){return m.id+':'+panelSensorNames(m).join(',')}).join(' ')"),
+      "cpu:value ram:value temp:value freq:value,max net:down,up bat: fan:")
+check("every key a panel template, alert or scale reads is a panel sensor", run(M, "METRICS.every(function(m){var n=panelSensorNames(m);var ks=m.scale&&m.scale.observe?m.scale.observe.keys:[];return ks.every(function(k){return !m.sensors[k]||n.indexOf(k)>=0})})"))
+equal("only the core count skips the refresh rate limit", run(M, "sensorKinds().filter(function(k){return byId(k.id).sensors[k.name].noRateLimit}).map(function(k){return k.id+'.'+k.name}).join()"), "temp.coreCount")
+check("the trigger test is precomputed per sensor", "readonly property bool isTrigger" in MAIN_QML and "onValueChanged: if (isTrigger)" in MAIN_QML)
 equal("per-core sensor pattern", run(M, "byId('temp').popup.repeat.sensor"), "cpu/cpu{n}/temperature")
 check("main.qml builds the per-core id the same way", '"cpu/cpu" + coreRow.index + "/temperature"' in MAIN_QML)
 equal("fan discovery pattern equals main.qml's", "/" + run(M, "byId('fan').source.pattern").replace("/", "\\/") + "/",

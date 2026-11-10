@@ -83,6 +83,7 @@ PlasmoidItem {
             if (t && isNum(sensorValue(M.METRICS[i].id, t))) stepPeak(M.METRICS[i].id)
         }
     }
+    readonly property var coreCount: sensorValue("temp", "coreCount")
     function sensorOf(id, name) { return sensorItems[id + "." + name] || null }
     function sensorValue(id, name) {
         var s = sensorOf(id, name)
@@ -102,15 +103,18 @@ PlasmoidItem {
             readonly property var entry: M.byId(modelData.id).sensors[modelData.name]
             readonly property string key: modelData.id + "." + modelData.name
             sensorId: entry.id
-            updateRateLimit: root.refreshMs
+            readonly property bool isTrigger: M.byId(modelData.id).scale.trigger === modelData.name
+            updateRateLimit: entry.noRateLimit ? 0 : root.refreshMs
             enabled: M.sensorActive(entry, root.sensorFlags(modelData.id))
             // The sensor a following scale names as its trigger steps the peak once per refresh (the hardware
             // maximum is not a sensor, so a graph's scale grows to the highest value seen).
-            onValueChanged: if (M.byId(modelData.id).scale.trigger === modelData.name) root.stepPeak(modelData.id)
+            onValueChanged: if (isTrigger) root.stepPeak(modelData.id)
         }
         onObjectAdded: {
+            // The map is built once, when the last sensor exists (every binding that reads it re-evaluates once).
+            if (count !== root.sensorKinds.length) return
             root.sensorItems = sensorMap()
-            if (count === root.sensorKinds.length) root.stepTriggerPeaks()
+            root.stepTriggerPeaks()
         }
         function sensorMap() {
             var map = {}
@@ -827,11 +831,13 @@ PlasmoidItem {
         }
         return sensorVals(id)
     }
-    // Every value of a plain-sensor stat under the registry's sensor names (a sensor that is switched off reports
-    // undefined, and a template only reads the keys it names).
+    // The values of a plain-sensor stat that the panel text, alert and scale read, under the registry's sensor
+    // names (a sensor that is switched off reports undefined). Popup-only sensors are left out, so their updates
+    // do not re-evaluate the panel bindings.
     function sensorVals(id) {
         var vals = {}
-        for (var name in M.byId(id).sensors) vals[name] = sensorValue(id, name)
+        var names = M.panelSensorNames(M.byId(id))
+        for (var i = 0; i < names.length; ++i) vals[names[i]] = sensorValue(id, names[i])
         return vals
     }
     // The text of a stat in the panel, for the current step (compact or full) and orientation, from the
@@ -1446,7 +1452,7 @@ PlasmoidItem {
 
                 Repeater {
                     id: perCore
-                    model: root.popupCores && root.isNum(sensorValue("temp", "coreCount")) ? Number(sensorValue("temp", "coreCount")) : 0
+                    model: root.popupCores && root.isNum(root.coreCount) ? Number(root.coreCount) : 0
 
                     delegate: RowLayout {
                         id: coreRow

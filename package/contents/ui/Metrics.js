@@ -16,7 +16,7 @@
 //   keys      config keys (main.xml names): show, popup, gp (panel graph), gd (popup graph),
 //             options (extra per-stat settings, name -> key), hidden (keys the widget writes itself)
 //   defaults  main.xml defaults for those keys (same shape as keys)
-//   sensors   name -> { id, gate, expanded }: sensor ids and when each is polled.
+//   sensors   name -> { id, gate, expanded, noRateLimit }: sensor ids and when each is polled.
 //             gate is "show", "popup", "show|popup" or "opt:<key>"; expanded:true also needs the popup open
 //   source    only when values do not come from plain sensors: { kind: "dataengine" | "discovered", ... }
 //   panel     full / compact: horizontal templates; vertical / verticalCompact: arrays of line templates
@@ -163,7 +163,7 @@ var METRICS = [
         sensors: {
             value:     { id: "cpu/all/averageTemperature", gate: "show|popup" },
             max:       { id: "cpu/all/maximumTemperature", gate: "opt:popupMax", expanded: true },
-            coreCount: { id: "cpu/all/coreCount", gate: "opt:popupCores", expanded: true }
+            coreCount: { id: "cpu/all/coreCount", gate: "opt:popupCores", expanded: true, noRateLimit: true }
         },
         panel: {
             full: "{value:temp}", compact: "{value:tempShort}",
@@ -408,6 +408,14 @@ function sensorKinds() {
     for (var i = 0; i < METRICS.length; ++i)
         for (var name in METRICS[i].sensors) list.push({ id: METRICS[i].id, name: name })
     return list
+}
+
+// The names of a stat's sensors the panel reads (those polled for the strip, gate "show" or "show|popup"); the
+// popup-only ones are left out of the values the panel text, alert and scale bindings depend on.
+function panelSensorNames(m) {
+    var names = []
+    for (var name in m.sensors) if (m.sensors[name].gate.indexOf("show") === 0) names.push(name)
+    return names
 }
 
 // ---- sensor gating ----
