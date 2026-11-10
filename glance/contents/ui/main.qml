@@ -963,9 +963,12 @@ PlasmoidItem {
 
             GridLayout {
                 id: content
-                // Centred at its natural size on a horizontal strip; filling the width when vertical.
-                anchors.fill: compact.vertical ? parent : undefined
-                anchors.centerIn: compact.vertical ? undefined : parent
+                // Centred at its natural size on a horizontal strip; filling the cell when vertical. Sizes are
+                // bound explicitly: switching between anchors.fill and centerIn leaves the last filled size
+                // behind after an orientation change while running, which scrambled the horizontal strip.
+                anchors.centerIn: parent
+                width: compact.vertical ? parent.width : implicitWidth
+                height: compact.vertical ? parent.height : implicitHeight
                 columns: compact.vertical ? 1 : (cell.fan ? 3 : 2)
                 columnSpacing: Kirigami.Units.smallSpacing
                 rowSpacing: 0
