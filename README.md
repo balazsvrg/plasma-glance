@@ -11,6 +11,8 @@ CPU 4%  |  RAM 30%  |  35°C
 - Vertical panels: three captioned blocks (`CPU` over `4%`), text shrinks to fit.
 - Click for a popup with used / total memory, average and max temperature, and a per-core
   temperature list (one entry per KDE core sensor; hyperthreads of one physical core read alike).
+- Optional line graphs of all three stats, in the panel (behind the text or inline after it)
+  and in the popup. Off by default.
 - Each temperature turns red when it reaches the configurable threshold.
 - Pure QML. No native code, no background processes: values come from KDE's own
   sensor service (`org.kde.ksysguard.sensors`).
@@ -35,7 +37,7 @@ Uninstall with `./uninstall.sh` (remove it from your panels first).
 
 ## Settings
 
-Right-click the widget in the panel and choose **Configure…**. There are two tabs.
+Right-click the widget in the panel and choose **Configure…**. There are three tabs.
 
 **General**
 
@@ -51,6 +53,18 @@ Right-click the widget in the panel and choose **Configure…**. There are two t
 CPU usage, memory (used / total), average temperature, hottest-core temperature,
 and per-core temperatures. Turning off the per-core list also stops its sensors.
 
+**Graphs**
+
+| Setting | Default |
+|---|---|
+| Panel graphs: Off / Behind the text / Inline, after the text | Off |
+| Show a graph under each enabled popup item | off |
+| History length: 30 s / 1 min / 5 min | 1 min |
+
+Graph history is collected only while a graph is turned on, and starts once all three
+sensors report real values. The graphs span the samples collected so far and then scroll.
+On a vertical panel, "inline" puts the graph below the text.
+
 ## Develop
 
 ```
@@ -65,6 +79,7 @@ Sensor IDs used (check with `kstatsviewer --list`):
 `cpu/all/usage`, `memory/physical/usedPercent`, `memory/physical/used`,
 `memory/physical/total`, `cpu/all/averageTemperature`, `cpu/all/maximumTemperature`,
 `cpu/all/coreCount`, `cpu/cpuN/temperature`.
+Graphs use KDE Quick Charts (`org.kde.quickcharts`: `LineChart`, `HistoryProxySource`).
 
 ## Layout
 
@@ -76,5 +91,6 @@ cpu-mem-temp-widget/
   contents/ui/main.qml          panel view, popup, sensors
   contents/ui/configGeneral.qml settings tab: General
   contents/ui/configPopup.qml   settings tab: Popup
+  contents/ui/configGraphs.qml  settings tab: Graphs
 install.sh / uninstall.sh
 ```
