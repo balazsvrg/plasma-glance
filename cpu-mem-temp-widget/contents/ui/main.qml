@@ -34,50 +34,49 @@ PlasmoidItem {
     Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount" }
 
     // ---- graph history ----
-    // Samples are collected only while some graph is enabled (the Loader is
-    // inactive otherwise), so there is no background cost when graphs are off.
-    readonly property int panelGraphStyle: Plasmoid.configuration.panelGraphStyle // 0 off, 1 behind, 2 inline
+    // Each stat has its own history. It is collected only while a graph that
+    // shows that stat is enabled, and it starts once the stat's sensor has
+    // reported a real number (so the history never begins with fake zeros).
+    readonly property int styleOff: 0
+    readonly property int styleBehind: 1
+    readonly property int styleInline: 2   // keep in sync with the dropdown order in configGraphs.qml
+    readonly property int panelGraphStyle: Plasmoid.configuration.panelGraphStyle
     readonly property bool popupGraphs: Plasmoid.configuration.popupGraphs
-    readonly property bool graphsActive: panelGraphStyle > 0 || popupGraphs
-    // Start recording only once all three sensors report real values, so the
-    // history does not begin with fake zeros.
-    readonly property bool sensorsReady: isNum(cpuUsage.value) && isNum(memPercent.value) && isNum(tempAvg.value)
-    readonly property int historyLen: Math.max(10, Math.round(Plasmoid.configuration.historySeconds * 1000 / refreshMs))
-    readonly property var cpuHist:  histories.item ? histories.item.cpu  : null
-    readonly property var ramHist:  histories.item ? histories.item.ram  : null
-    readonly property var tempHist: histories.item ? histories.item.temp : null
+    readonly property bool panelGraphs: panelGraphStyle !== styleOff
+    readonly property int historyLen: Math.max(2, Math.round(Plasmoid.configuration.historySeconds * 1000 / refreshMs))
+    readonly property real tempYMax: Math.max(100, warnTempC + 10)   // temperature graph scale: 20 .. tempYMax
 
-    Loader {
-        id: histories
-        active: root.graphsActive && root.sensorsReady
+    component History: Loader {
+        id: hist
+        property var sensor
+        property bool wanted: false
+        property bool ready: false          // latched once the sensor has reported a number
+        readonly property var source: item ? item.history : null
+        readonly property bool numeric: root.isNum(sensor.value)
+
+        onNumericChanged: if (numeric) ready = true
+        Component.onCompleted: if (numeric) ready = true
+
+        active: wanted && ready
         sourceComponent: Item {
-            property alias cpu: cpuH
-            property alias ram: ramH
-            property alias temp: tempH
-
+            readonly property var history: h
             Charts.HistoryProxySource {
-                id: cpuH
-                source: Charts.SingleValueSource { value: cpuUsage.value }
-                maximumHistory: root.historyLen
-                interval: root.refreshMs
-                fillMode: Charts.HistoryProxySource.DoNotFill
-            }
-            Charts.HistoryProxySource {
-                id: ramH
-                source: Charts.SingleValueSource { value: memPercent.value }
-                maximumHistory: root.historyLen
-                interval: root.refreshMs
-                fillMode: Charts.HistoryProxySource.DoNotFill
-            }
-            Charts.HistoryProxySource {
-                id: tempH
-                source: Charts.SingleValueSource { value: tempAvg.value }
+                id: h
+                source: Charts.SingleValueSource { value: hist.sensor.value }
                 maximumHistory: root.historyLen
                 interval: root.refreshMs
                 fillMode: Charts.HistoryProxySource.DoNotFill
             }
         }
     }
+
+    History { id: cpuHistory;  sensor: cpuUsage;  wanted: (root.panelGraphs && root.showCpu)  || (root.popupGraphs && root.popupCpu) }
+    History { id: ramHistory;  sensor: memPercent; wanted: (root.panelGraphs && root.showRam)  || (root.popupGraphs && root.popupMemory) }
+    History { id: tempHistory; sensor: tempAvg;   wanted: (root.panelGraphs && root.showTemp) || (root.popupGraphs && root.popupTempAvg) }
+
+    readonly property var cpuHist:  cpuHistory.source
+    readonly property var ramHist:  ramHistory.source
+    readonly property var tempHist: tempHistory.source
 
     // One small line graph; used by the popup and (next) the panel.
     component Spark: Charts.LineChart {
@@ -171,9 +170,9 @@ PlasmoidItem {
             property real yTo: 100
             property color lineColor: Kirigami.Theme.highlightColor
 
-            readonly property bool hasGraph: root.panelGraphStyle > 0 && history !== null
-            readonly property bool behind: hasGraph && root.panelGraphStyle === 1
-            readonly property bool inline: hasGraph && root.panelGraphStyle === 2
+            readonly property bool hasGraph: root.panelGraphs && history !== null
+            readonly property bool behind: hasGraph && root.panelGraphStyle === root.styleBehind
+            readonly property bool inline: hasGraph && root.panelGraphStyle === root.styleInline
 
             implicitWidth: content.implicitWidth
             implicitHeight: content.implicitHeight
@@ -182,7 +181,7 @@ PlasmoidItem {
                 visible: cell.behind
                 anchors.fill: parent
                 opacity: 0.5
-                history: cell.history
+                history: cell.behind ? cell.history : null
                 yFrom: cell.yFrom
                 yTo: cell.yTo
                 lineColor: cell.lineColor
@@ -213,7 +212,7 @@ PlasmoidItem {
                     Layout.fillWidth: compact.vertical
                     Layout.preferredWidth: compact.vertical ? -1 : Kirigami.Units.gridUnit * 4
                     Layout.preferredHeight: Kirigami.Units.gridUnit * (compact.vertical ? 1 : 1.2)
-                    history: cell.history
+                    history: cell.inline ? cell.history : null
                     yFrom: cell.yFrom
                     yTo: cell.yTo
                     lineColor: cell.lineColor
@@ -263,7 +262,7 @@ PlasmoidItem {
                 textColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                 history: root.tempHist
                 yFrom: 20
-                yTo: 100
+                yTo: root.tempYMax
                 lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
             }
             PlasmaComponents.Label {
@@ -287,7 +286,7 @@ PlasmoidItem {
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: root.cpuHist
+            history: (root.popupGraphs && root.popupCpu) ? root.cpuHist : null
         }
 
         PlasmaComponents.Label { visible: root.popupMemory; text: "Memory" }
@@ -303,7 +302,7 @@ PlasmoidItem {
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: root.ramHist
+            history: (root.popupGraphs && root.popupMemory) ? root.ramHist : null
         }
 
         PlasmaComponents.Label { visible: root.popupTempAvg; text: "CPU temp (avg)" }
@@ -319,9 +318,9 @@ PlasmoidItem {
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: root.tempHist
+            history: (root.popupGraphs && root.popupTempAvg) ? root.tempHist : null
             yFrom: 20
-            yTo: 100
+            yTo: root.tempYMax
             lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
         }
 

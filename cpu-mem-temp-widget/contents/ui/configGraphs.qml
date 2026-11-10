@@ -16,6 +16,18 @@ KCM.SimpleKCM {
     property bool cfg_popupGraphsDefault
     property int cfg_historySecondsDefault
 
+    // Index of the preset (30 s, 1 min, 5 min) closest to a stored value, so a
+    // hand-edited config never makes the box show a different setting.
+    readonly property var historyPresets: [30, 60, 300]
+    function nearestHistoryIndex(seconds) {
+        var best = 0
+        for (var i = 1; i < historyPresets.length; ++i) {
+            if (Math.abs(historyPresets[i] - seconds) < Math.abs(historyPresets[best] - seconds))
+                best = i
+        }
+        return best
+    }
+
     Kirigami.FormLayout {
         QQC2.ComboBox {
             id: styleBox
@@ -53,7 +65,7 @@ KCM.SimpleKCM {
         Binding {
             target: historyBox
             property: "currentIndex"
-            value: Math.max(0, historyBox.indexOfValue(page.cfg_historySeconds))
+            value: page.nearestHistoryIndex(page.cfg_historySeconds)
         }
     }
 }

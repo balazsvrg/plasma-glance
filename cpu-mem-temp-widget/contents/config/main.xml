@@ -69,8 +69,8 @@
         <entry name="historySeconds" type="Int">
             <label>Graph history length in seconds</label>
             <default>60</default>
-            <min>10</min>
-            <max>600</max>
+            <min>30</min>
+            <max>300</max>
         </entry>
     </group>
 </kcfg>
