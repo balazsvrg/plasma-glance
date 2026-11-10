@@ -338,6 +338,25 @@ function byId(id) {
     return null
 }
 
+// ---- settings pages ----
+// The name shown for a stat in the settings and the maximum-length notice (the id itself if unknown).
+function statName(id) {
+    var m = byId(id)
+    return m ? m.name : id
+}
+// One row of the Metrics table per stat, in registry order: the display name and the four checkbox keys.
+function settingsRows() {
+    return METRICS.map(function (m) {
+        return { id: m.id, name: m.name, show: m.keys.show, graph: m.keys.gp, popup: m.keys.popup, popupGraph: m.keys.gd }
+    })
+}
+// The hidden config key holding how many devices the widget found, for a stat that needs hardware (battery,
+// fan); "" for the others, which are always available.
+function hardwareKey(id) {
+    var m = byId(id)
+    return m && m.keys.hidden && m.keys.hidden.count ? m.keys.hidden.count : ""
+}
+
 // ---- panel text ----
 // The worst-case value set for a kind of text: "horizontal" or "vertical".
 function sampleVals(m, vertical, ctx) {

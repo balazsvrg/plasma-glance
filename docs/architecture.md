@@ -49,9 +49,8 @@ tests/golden/                    the panel text of release v0.9.1 (panel_text.js
 defaults, sensors and when they are polled, panel text templates (full, compact, vertical), worst-case
 samples, graph scale, alert rule and popup rows, plus the pure formatting helpers that render those templates.
 `main.qml` takes its panel text and its horizontal width reserves (section 4), its alerts, scales and histories
-(section 8), its plain sensors (sections 2 and 11) and its popup (section 5) from it; the settings pages still carry
-their own copies of the rest, which the registry also describes and the tests compare with the code (section 14
-lists what a new stat still needs).
+(section 8), its plain sensors (sections 2 and 11) and its popup (section 5) from it; the settings pages take the
+stat names, the table rows and the hardware check from it (section 13); section 14 lists what a new stat still needs.
 `tests/metrics_test.py` checks the registry against the golden data in `tests/golden/`, which holds the exact
 text the hand-written code of v0.9.1 produced, and checks how `main.qml` feeds it.
 
@@ -728,7 +727,7 @@ comment says to keep it in step with `configGraphs.qml`.
 
 A `Kirigami.InlineMessage` with no `cfg_` properties. It reads `lengthInlineOff`, `lengthTextShort`,
 `lengthLevel`, `lengthDropped` and `maxLength` from `Plasmoid.configuration` and builds its bullet list from
-them. It has its own `statName(id)` switch (a second copy of the stat names).
+them. It names the dropped stats with `M.statName(id)` from the registry.
 
 ---
 
@@ -780,11 +779,11 @@ settings. Everything else (strip layout, tooltip, `syncLengthInfo`, `configs()`,
     `alert`, `decoration`, `graphWhen`, `graphAfter`, `available`, `repeat` or `hooks`). `main.qml` needs nothing
     for a stat made of rows and a graph. A new hook name needs a component in `hookComponent`. Gate any
     popup-only sensor with `expanded: true`.
-10. `configMetrics.qml`: add the entry to `stats` (id, translated name, the four setting names); add
-    `cfg_*` and `cfg_*Default` properties for every new key; if hardware-dependent, add the `xCount`
-    read (`Plasmoid.configuration.xCount`), a `hasX` property and a case in `rowAvailable`. Do not declare
-    `cfg_xCount`.
-11. `LengthNotice.qml`: add a case to its own `statName(id)`.
+10. `configMetrics.qml`: the table row and the name come from the registry (`M.settingsRows()`); add
+    `cfg_*` and `cfg_*Default` properties for every new key (Plasma binds them by name; a test fails if one is
+    missing). If hardware-dependent, give the entry `keys.hidden.count` (`rowAvailable` reads it through
+    `M.hardwareKey`) and do not declare `cfg_xCount`.
+11. `LengthNotice.qml`: nothing (it uses `M.statName`).
 12. Version and docs: bump the version in `metadata.json` before `./package.sh`; update the README.
 
 Check the result by running `plasmawindowed org.local.cpumemtemp` and looking at a screenshot. QML load
@@ -833,6 +832,4 @@ Each of these is visible in the code or its comments, except where marked.
 - Vertical panels cannot be tested with `plasmawindowed`, and the vertical branches of `cellLength` are
   estimates. Real mouse events cannot be injected in the dev environment, so the handle's `MouseArea`
   handlers are only tested by hand.
-- The stat names exist in two places in the settings code (`stats` in `configMetrics.qml` and `statName` in
-  `LengthNotice.qml`) and the id switch statements are repeated in `main.qml`; a new stat must touch all of
-  them (section 14).
+- The id switch statements are repeated in `main.qml`; a new stat must touch all of them (section 14).

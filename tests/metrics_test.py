@@ -378,13 +378,6 @@ print("      main.xml keys outside the descriptors:")
 for k in unclaimed:
     print("        %-16s %s" % (k, UNCLAIMED.get(k, "?")))
 
-# Labels agree with the two places that carry them today.
-page_names = dict(re.findall(r'\{ id: "(\w+)",\s+name: i18n\("([^"]+)"\)', METRICS_PAGE))
-notice_names = dict(re.findall(r'case "(\w+)":\s+return i18n\("([^"]+)"\)', NOTICE))
-for mid in ids:
-    name = run(M, "byId('%s').name" % mid)
-    equal("name of %s equals the Metrics table label" % mid, name, page_names.get(mid))
-    equal("name of %s equals the LengthNotice label" % mid, name, notice_names.get(mid))
 # Sensor ids: the registry's set equals the literal sensorId strings in main.qml (per-core and fan ids are patterns).
 qml_ids = set(re.findall(r'sensorId: "([^"]+)"', MAIN_QML))
 reg_ids = set()
@@ -638,6 +631,35 @@ for m in run(M, "METRICS.map(function(m){return {id:m.id,plain:!m.source,sensors
 check("the popup stat list is a function of the order and popupShown", "function popupIds()" in MAIN_QML)
 check("the popup label list is computed once", MAIN_QML.count("M.popupLabels(M.METRICS)") == 1)
 check("the orphaned battery-row comment is gone", "The popup's battery row:" not in MAIN_QML)
+
+# ---- P5: settings pages and the notice from the registry ----
+CFG_QML = open(os.path.join(UI, "configMetrics.qml"), encoding="utf-8").read()
+NOTICE_QML = open(os.path.join(UI, "LengthNotice.qml"), encoding="utf-8").read()
+rows = run(M, "settingsRows()")
+equal("settings rows follow the registry order", [r["id"] for r in rows], run(M, "METRICS.map(function(m){return m.id})"))
+equal("a settings row carries the registry's names and the four keys",
+      [r for r in rows if r["id"] == "temp"],
+      [{"id": "temp", "name": "CPU temperature", "show": "showTemp", "graph": "graphPanelTemp",
+        "popup": "popupTempAvg", "popupGraph": "graphPopupTemp"}])
+equal("statName reads the registry", run(M, "[statName('fan'), statName('net')]"), ["Fan speed", "Network speed"])
+equal("statName of an unknown id is the id", run(M, "statName('zzz')"), "zzz")
+equal("hardware keys: battery and fan only", run(M, "METRICS.map(function(m){return hardwareKey(m.id)})"),
+      ["", "", "", "", "", "batteryCount", "fanCount"])
+equal("hardwareKey of an unknown id is empty", run(M, "hardwareKey('zzz')"), "")
+declared = set()
+for page in ("configGeneral", "configMetrics", "configGraphs"):
+    declared |= set(re.findall(r"property\s+\w+\s+cfg_(\w+)", open(os.path.join(UI, page + ".qml"), encoding="utf-8").read()))
+for r in rows:
+    for k in (r["show"], r["graph"], r["popup"], r["popupGraph"]):
+        check("a settings page declares cfg_%s and cfg_%sDefault" % (k, k), k in declared and (k + "Default") in declared)
+for m in run(M, "METRICS.map(function(m){return {id:m.id,o:m.keys.options||{},h:m.keys.hidden||{}}})"):
+    for k in m["o"].values():
+        check("a settings page declares the option cfg_%s" % k, k in declared and (k + "Default") in declared)
+    for k in m["h"].values():
+        check("the hidden key %s has no cfg_ property" % k, k not in declared and (k + "Default") not in declared)
+check("configMetrics builds its rows from the registry", "M.settingsRows()" in CFG_QML and "M.hardwareKey(id)" in CFG_QML)
+check("configMetrics has no hand-written stat list", 'id: "cpu"' not in CFG_QML)
+check("LengthNotice names stats through the registry", "M.statName(" in NOTICE_QML and "function statName" not in NOTICE_QML)
 
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))
