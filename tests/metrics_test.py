@@ -591,15 +591,16 @@ check("every popup row alert is 'panel' or a function", run(M, "METRICS.every(fu
 # ---- generic popup block (P4 step 2) ----
 for blk in ("cpuBlock", "ramBlock", "freqBlock", "netBlock", "fanBlock"):
     check("main.qml has no %s" % blk, "id: " + blk not in MAIN_QML)
-check("the stat block renders the registry's rows around the graph", "popup.rows.slice(0, M.popupRowsBeforeGraph(" in MAIN_QML
-      and "popup.rows.slice(M.popupRowsBeforeGraph(" in MAIN_QML
+check("the stat block renders the registry's rows around the graph", "popup.rows.slice(0, blk.rowsBeforeGraph)" in MAIN_QML
+      and "popup.rows.slice(blk.rowsBeforeGraph)" in MAIN_QML
       and "M.render(modelData.value, root.popupVals(statId), root.textCtx)" in MAIN_QML)
 check("the stat block's rows, graph and per-item lines use the registry's flags", "M.popupRowShown(modelData, root.popupFlags(statId))" in MAIN_QML
-      and "M.flagOn(M.byId(blk.statId).popup.repeat.when" in MAIN_QML
-      and "M.popupGraphShown(M.byId(blk.statId), root.popupFlags(blk.statId))" in MAIN_QML)
-check("the loader hands its stat id to the block", "readonly property string blockStatId: modelData" in MAIN_QML)
+      and "M.flagOn(spec.when, root.popupFlags(statId))" in MAIN_QML
+      and "M.popupGraphShown(blk.entry, root.popupFlags(blk.statId))" in MAIN_QML)
+check("the block takes its stat id as a required property, not from its parent", "required property string statId" in MAIN_QML
+      and "blockStatId" not in MAIN_QML and "parent.blockStatId" not in MAIN_QML)
 check("main.qml has no popupBlock switch and no batBlock", "function popupBlock" not in MAIN_QML and "id: batBlock" not in MAIN_QML)
-check("every popup is the one generic block", "sourceComponent: M.byId(modelData) ? statBlock : null" in MAIN_QML)
+check("the popup is a Repeater of StatBlocks over the shown stats", "model: root.popupIds()" in MAIN_QML and "delegate: StatBlock {" in MAIN_QML)
 equal("hook names in the registry equal the components main.qml has", run(M, "METRICS.reduce(function(a,m){return a.concat(m.popup.hooks||[])},[])"), ["perBattery", "chargeRow"])
 for hk in ("perBattery", "chargeRow"):
     check("main.qml has a component for hook " + hk, 'case "%s":' % hk in MAIN_QML and "id: %sHook" % hk in MAIN_QML)
@@ -619,10 +620,24 @@ equal("popup rows render the v0.9.2 text", run(M, "(function(){var v={cpu:{value
 check("popupShown asks the registry", "return !!m && M.popupOn(m, popupFlags(id))" in MAIN_QML)
 for n in ("popupCpu", "popupMemory", "popupTempAvg", "popupTempMax", "popupFreq", "popupNet", "popupCores"):
     check("main.qml has no per-stat %s property" % n, "property bool %s:" % n not in MAIN_QML)
-check("the popup name column is sized from the registry's labels", "model: M.popupLabels(M.METRICS)" in MAIN_QML
+check("the popup name column is sized from the registry's labels", "model: root.popupLabelList" in MAIN_QML
+      and "M.popupLabels(M.METRICS)" in MAIN_QML
       and '"CPU temp (max core)"' not in MAIN_QML)
 for f in ("temp", "gib", "rate", "bytesText", "ghzNumber", "freq"):
     check("the unused popup wrapper %s is gone" % f, "function %s(v)" % f not in MAIN_QML)
+
+# ---- review fixes: behaviour checks ----
+equal("every sensor gate is one of the known ones", run(M, "METRICS.every(function(m){return Object.keys(m.sensors).every(function(n){var g=m.sensors[n].gate;return g==='show'||g==='show|popup'||g==='popup'||g.indexOf('opt:')===0})})"), True)
+equal("panel sensors are exactly those with a show gate", run(M, "(function(){var m={sensors:{a:{gate:'show'},b:{gate:'show|popup'},c:{gate:'popup'},d:{gate:'showOnly'},e:{gate:'opt:x'}}};return panelSensorNames(m)})()"), ["a", "b"])
+# Every key a popup row template reads is supplied by the popup values (sensors of a plain stat, source fields otherwise).
+supply = {"bat": ["percent", "state", "energy"], "fan": ["value"]}
+for m in run(M, "METRICS.map(function(m){return {id:m.id,plain:!m.source,sensors:Object.keys(m.sensors),rows:m.popup.rows.map(function(r){return r.value}).concat(m.popup.repeat?[m.popup.repeat.value]:[])}})"):
+    have = m["sensors"] if m["plain"] else supply[m["id"]]
+    used = set(k for t in m["rows"] for k in re.findall(r"\{(\w+)", t))
+    check("popup values of %s supply the keys its rows read (%s)" % (m["id"], sorted(used)), used <= set(have))
+check("the popup stat list is a function of the order and popupShown", "function popupIds()" in MAIN_QML)
+check("the popup label list is computed once", MAIN_QML.count("M.popupLabels(M.METRICS)") == 1)
+check("the orphaned battery-row comment is gone", "The popup's battery row:" not in MAIN_QML)
 
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))

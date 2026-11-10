@@ -613,7 +613,6 @@ PlasmoidItem {
     // need come in through textCtx, read here so the calling binding re-evaluates when they change.
     function pct(v)  { return M.FORMATS.pct(v) }
     function wh(v)   { return M.FORMATS.wh(v) }
-    // The popup's battery row: the percentage, the state arrow and the energy of all batteries.
     // Hours as "3h 12m" or "45m"; empty when it cannot be estimated.
     function hoursText(hours) {
         if (!isFinite(hours) || hours < 0 || hours > 99) return ""
@@ -1261,16 +1260,17 @@ PlasmoidItem {
     // The name column is as wide as the widest label of the registry's popup rows (one TextMetrics per label,
     // read inside the binding so it follows a font change).
     property var popupLabelItems: []
+    readonly property var popupLabelList: M.popupLabels(M.METRICS)
     Instantiator {
         id: popupLabelInst
-        model: M.popupLabels(M.METRICS)
+        model: root.popupLabelList
         delegate: TextMetrics {
             required property string modelData
             font: Kirigami.Theme.defaultFont
             text: modelData
         }
         onObjectAdded: {
-            if (count !== M.popupLabels(M.METRICS).length) return
+            if (count !== root.popupLabelList.length) return
             var items = []
             for (var i = 0; i < count; ++i) items.push(objectAt(i))
             root.popupLabelItems = items
@@ -1286,6 +1286,12 @@ PlasmoidItem {
     function popupShown(id) {
         var m = M.byId(id)
         return !!m && M.popupOn(m, popupFlags(id))
+    }
+    // The stats shown in the popup, in the user's order.
+    function popupIds() {
+        var ids = []
+        for (var i = 0; i < statOrder.length; ++i) if (popupShown(statOrder[i])) ids.push(statOrder[i])
+        return ids
     }
     function anyPopupShown() {
         for (var i = 0; i < statOrder.length; ++i) if (popupShown(statOrder[i])) return true
@@ -1363,41 +1369,35 @@ PlasmoidItem {
         valueColor: root.popupRowColor(statId, modelData)
         fanIcon: modelData.decoration === "fanIcon"
     }
-    // The block of a stat made only of registry rows and a graph (every stat).
-    // Its stat id comes from the Loader that holds it.
-    Component {
-        id: statBlock
-        ColumnLayout {
-            id: blk
-            readonly property string statId: parent && parent.blockStatId ? parent.blockStatId : ""
-            Repeater {
-                model: blk.statId ? M.byId(blk.statId).popup.rows.slice(0, M.popupRowsBeforeGraph(M.byId(blk.statId))) : []
-                delegate: StatRow { statId: blk.statId }
+    // The block of a stat: its registry rows and graph, the hooks between them, and the per-item lines.
+    component StatBlock: ColumnLayout {
+        id: blk
+        required property string statId
+        readonly property var entry: M.byId(statId)
+        readonly property int rowsBeforeGraph: M.popupRowsBeforeGraph(entry)
+        Repeater {
+            model: blk.entry.popup.rows.slice(0, blk.rowsBeforeGraph)
+            delegate: StatRow { statId: blk.statId }
+        }
+        Repeater {
+            model: blk.entry.popup.hooks || []
+            delegate: Loader {
+                required property string modelData
+                sourceComponent: root.hookComponent(modelData)
+                visible: item !== null && item.shown
             }
-            Repeater {
-                model: blk.statId ? (M.byId(blk.statId).popup.hooks || []) : []
-                delegate: Loader {
-                    required property string modelData
-                    sourceComponent: root.hookComponent(modelData)
-                    visible: item !== null && item.shown
-                }
-            }
-            PopupGraph {
-                statId: blk.statId
-                wanted: blk.statId !== "" && M.popupGraphShown(M.byId(blk.statId), root.popupFlags(blk.statId))
-            }
-            Repeater {
-                model: blk.statId ? M.byId(blk.statId).popup.rows.slice(M.popupRowsBeforeGraph(M.byId(blk.statId))) : []
-                delegate: StatRow { statId: blk.statId }
-            }
-            Loader {
-                readonly property string blockStatId: blk.statId
-                active: blk.statId !== "" && !!M.byId(blk.statId).popup.repeat
-                        && M.flagOn(M.byId(blk.statId).popup.repeat.when, root.popupFlags(blk.statId))
-                visible: active && item !== null && item.count > 0
-                Layout.fillWidth: true
-                sourceComponent: repeatBlock
-            }
+        }
+        PopupGraph {
+            statId: blk.statId
+            wanted: M.popupGraphShown(blk.entry, root.popupFlags(blk.statId))
+        }
+        Repeater {
+            model: blk.entry.popup.rows.slice(blk.rowsBeforeGraph)
+            delegate: StatRow { statId: blk.statId }
+        }
+        RepeatBlock {
+            statId: blk.statId
+            Layout.fillWidth: true
         }
     }
 
@@ -1440,48 +1440,48 @@ PlasmoidItem {
     }
     // The per-item lines of a stat's popup (the temperature of each core): a header and a two-column grid, one
     // line per item. Its sensors only exist while the popup is open (one per delegate).
-    Component {
-        id: repeatBlock
-        ColumnLayout {
-            id: rep
-            readonly property string statId: parent && parent.blockStatId ? parent.blockStatId : ""
-            readonly property var spec: statId ? M.byId(statId).popup.repeat : null
-            readonly property int count: spec && root.isNum(root.coreCount) ? Number(root.coreCount) : 0
-            PlasmaComponents.Label {
-                Layout.topMargin: Kirigami.Units.smallSpacing
-                text: rep.spec ? rep.spec.header : ""
-                font.bold: true
-            }
-            GridLayout {
-                Layout.fillWidth: true
-                columns: 2
-                columnSpacing: Kirigami.Units.gridUnit * 2
-                rowSpacing: 0
+    component RepeatBlock: ColumnLayout {
+        id: rep
+        required property string statId
+        readonly property var spec: M.byId(statId).popup.repeat
+        // No lines (and so no sensors) unless the stat has them and their flag is on.
+        readonly property bool on: !!spec && M.flagOn(spec.when, root.popupFlags(statId))
+        readonly property int count: on && root.isNum(root.coreCount) ? Number(root.coreCount) : 0
+        visible: count > 0
+        PlasmaComponents.Label {
+            Layout.topMargin: Kirigami.Units.smallSpacing
+            text: rep.spec ? rep.spec.header : ""
+            font.bold: true
+        }
+        GridLayout {
+            Layout.fillWidth: true
+            columns: 2
+            columnSpacing: Kirigami.Units.gridUnit * 2
+            rowSpacing: 0
 
-                Repeater {
-                    model: rep.count
+            Repeater {
+                model: rep.count
 
-                    delegate: RowLayout {
-                        id: item
-                        required property int index
+                delegate: RowLayout {
+                    id: item
+                    required property int index
+                    Layout.fillWidth: true
+
+                    Sensors.Sensor {
+                        id: itemSensor
+                        sensorId: rep.spec.sensor.replace("{n}", item.index)
+                        updateRateLimit: root.refreshMs
+                    }
+                    readonly property bool hot: rep.spec.alert({ value: itemSensor.value }, root.limitCtx)
+
+                    PlasmaComponents.Label {
+                        text: rep.spec.label.replace("{n}", item.index + 1)
                         Layout.fillWidth: true
-
-                        Sensors.Sensor {
-                            id: itemSensor
-                            sensorId: rep.spec.sensor.replace("{n}", item.index)
-                            updateRateLimit: root.refreshMs
-                        }
-                        readonly property bool hot: rep.spec.alert({ value: itemSensor.value }, root.limitCtx)
-
-                        PlasmaComponents.Label {
-                            text: rep.spec.label.replace("{n}", item.index + 1)
-                            Layout.fillWidth: true
-                        }
-                        PlasmaComponents.Label {
-                            text: M.render(rep.spec.value, { value: itemSensor.value }, root.textCtx)
-                            font.bold: true
-                            color: item.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-                        }
+                    }
+                    PlasmaComponents.Label {
+                        text: M.render(rep.spec.value, { value: itemSensor.value }, root.textCtx)
+                        font.bold: true
+                        color: item.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                     }
                 }
             }
@@ -1492,14 +1492,11 @@ PlasmoidItem {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 14
 
         Repeater {
-            model: root.statOrder
-            delegate: Loader {
+            model: root.popupIds()
+            delegate: StatBlock {
                 required property string modelData
+                statId: modelData
                 Layout.fillWidth: true
-                readonly property string blockStatId: modelData
-                active: root.popupShown(modelData)
-                visible: active
-                sourceComponent: M.byId(modelData) ? statBlock : null
             }
         }
 

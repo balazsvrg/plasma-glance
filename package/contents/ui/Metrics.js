@@ -6,7 +6,9 @@
 // STATUS: main.qml takes its panel text (statText, verticalLines), its horizontal width reserves, its alerts,
 // its graph scales, its graph histories (one per series) and its plain sensors (one per `sensors` entry, polled
 // when sensorActive says so) from this file, and reads the graph and popup flags through keys.gp / keys.gd /
-// keys.popup; the rest of a descriptor (the other keys, popup rows) is not used by the widget yet and is checked against it by tests/metrics_test.py. This is a .pragma library: the
+// keys.popup, and builds its popup (rows, graph, hooks, repeat, hardware checks) from `popup`; only the
+// descriptor's other keys and defaults are not used by the widget yet and are checked against it by
+// tests/metrics_test.py. This is a .pragma library: the
 // functions are pure and see no QML properties, so the caller passes every setting in through ctx and every
 // value through vals.
 //
@@ -421,7 +423,10 @@ function sensorKinds() {
 // popup-only ones are left out of the values the panel text, alert and scale bindings depend on.
 function panelSensorNames(m) {
     var names = []
-    for (var name in m.sensors) if (m.sensors[name].gate.indexOf("show") === 0) names.push(name)
+    for (var name in m.sensors) {
+        var g = m.sensors[name].gate
+        if (g === "show" || g === "show|popup") names.push(name)
+    }
     return names
 }
 
