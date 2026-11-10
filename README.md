@@ -108,6 +108,13 @@ that fits:
 
 The tooltip always lists every stat, including dropped ones. With the limit at 0 nothing changes.
 
+**Setting it with the mouse:** right-click the widget and choose **Adjust length with the mouse**.
+A handle appears on the strip's far edge (right edge, or bottom edge on a vertical panel). Drag it
+and the strip resizes live, compacting and dropping stats as it goes, with a small readout of the
+limit in pixels. The value is saved when you let go. Dragging out to the full length means "no
+limit", and double-clicking the handle resets to no limit. Adjust mode switches itself off after
+about 12 seconds without interaction, or untick the menu entry.
+
 ## Develop
 
 ```

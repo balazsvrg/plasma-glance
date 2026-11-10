@@ -502,7 +502,8 @@ PlasmoidItem {
     //   3  tight spacing
     // If even that is too long, stats are dropped from the end (Fan, Battery, Net, Freq,
     // Temp, RAM) until it fits. CPU is never dropped. The tooltip always lists everything.
-    readonly property int maxLength: Plasmoid.configuration.maxLength       // px, 0 = no limit
+    // The saved limit (px, 0 = no limit), or the live value while the edge handle is being dragged.
+    readonly property int maxLength: dragging ? dragMax() : Plasmoid.configuration.maxLength
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
     readonly property var statOrder: ["cpu", "ram", "temp", "freq", "net", "bat", "fan"]
 
@@ -646,6 +647,42 @@ PlasmoidItem {
     readonly property int lengthLevel: fit.level
     readonly property bool textCompact: lengthLevel >= 2
     readonly property var droppedIds: shownIds().slice(shownIds().length - fit.drop)
+
+    // ---- adjusting the limit with the mouse ----
+    // Right-click > "Adjust length with the mouse" shows a handle on the strip's far edge
+    // (right edge, or bottom edge on a vertical panel). Dragging it resizes the strip live;
+    // the value is saved on release. Dragging out to the full length means "no limit".
+    property bool adjusting: false           // handle visible
+    property bool dragging: false            // handle being dragged
+    property real dragLength: 0              // strip length under the mouse, px
+    function dragMax() {
+        var v = Math.max(20, Math.round(dragLength / 5) * 5)                 // snap to 5 px
+        return v >= stripLength(0, 0) ? 0 : v
+    }
+    function finishDrag() {
+        if (!dragging) return
+        var v = maxLength
+        dragging = false
+        Plasmoid.configuration.maxLength = v
+    }
+    function resetLength() {
+        dragging = false
+        Plasmoid.configuration.maxLength = 0
+    }
+    function lengthReadout() { return maxLength === 0 ? "No limit" : maxLength + " px" }
+
+    Plasmoid.contextualActions: [
+        PlasmaCore.Action {
+            id: adjustAction
+            text: i18n("Adjust length with the mouse")
+            icon.name: "zoom-fit-width"
+            checkable: true
+            onTriggered: root.adjusting = !root.adjusting
+        }
+    ]
+    Binding { target: adjustAction; property: "checked"; value: root.adjusting }
+    // Leave adjust mode on its own after a while without interaction.
+    Timer { interval: 12000; running: root.adjusting && !root.dragging; onTriggered: root.adjusting = false }
 
     function cellShown(id) { return statShown(id) && droppedIds.indexOf(id) < 0 }
     function anyCellBefore(id) {
@@ -850,6 +887,73 @@ PlasmoidItem {
                 visible: !root.anyCell()
                 Layout.alignment: Qt.AlignCenter
                 text: "–"
+            }
+        }
+
+        // ---- drag handle (shown by "Adjust length with the mouse") ----
+        Rectangle {
+            id: handle
+            visible: root.adjusting
+            z: 50
+            x: compact.vertical ? 0 : compact.width - width
+            y: compact.vertical ? compact.height - height : 0
+            width: compact.vertical ? compact.width : Kirigami.Units.smallSpacing * 2
+            height: compact.vertical ? Kirigami.Units.smallSpacing * 2 : compact.height
+            color: Kirigami.Theme.highlightColor
+            opacity: grab.pressed ? 0.95 : (grab.containsMouse ? 0.8 : 0.5)
+
+            Rectangle {            // grip line
+                anchors.centerIn: parent
+                width: compact.vertical ? Kirigami.Units.gridUnit : 2
+                height: compact.vertical ? 2 : Kirigami.Units.gridUnit
+                radius: 1
+                color: Kirigami.Theme.highlightedTextColor
+            }
+
+            MouseArea {
+                id: grab
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: compact.vertical ? Qt.SizeVerCursor : Qt.SizeHorCursor
+                property real startPos: 0
+                property real startLength: 0
+                // The pointer position along the panel. Using the pointer, not the handle, keeps the
+                // drag steady even though the handle moves as the strip changes length.
+                function pointerPos(mouse) {
+                    var g = mapToGlobal(mouse.x, mouse.y)
+                    return compact.vertical ? g.y : g.x
+                }
+                onPressed: function (mouse) {
+                    startPos = pointerPos(mouse)
+                    startLength = compact.vertical ? layout.implicitHeight : layout.implicitWidth
+                    root.dragLength = startLength
+                    root.dragging = true
+                }
+                onPositionChanged: function (mouse) {
+                    if (pressed) root.dragLength = startLength + (pointerPos(mouse) - startPos)
+                }
+                onReleased: root.finishDrag()
+                onCanceled: root.finishDrag()
+                onDoubleClicked: root.resetLength()
+            }
+        }
+
+        // Live readout while dragging.
+        Rectangle {
+            visible: root.dragging
+            z: 60
+            x: (compact.width - width) / 2
+            y: 0
+            width: readout.implicitWidth + Kirigami.Units.smallSpacing * 2
+            height: readout.implicitHeight
+            radius: 3
+            color: Kirigami.Theme.backgroundColor
+            opacity: 0.92
+            PlasmaComponents.Label {
+                id: readout
+                anchors.centerIn: parent
+                font.pixelSize: 10
+                text: root.lengthReadout()
             }
         }
     }
