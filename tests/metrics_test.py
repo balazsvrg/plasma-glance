@@ -5,12 +5,14 @@
 
 Needs python3 with PySide6 (its QJSEngine is Qt's own JavaScript engine, the one QML uses). Exits non-zero
 when any check fails. What it checks:
-  1. every panel text the registry renders equals the worst-case string main.qml uses today
-     (the m* TextMetrics lines, and the vertical sample lines);
-  2. the registry's formatters give the same output as main.qml's own formatting functions, which are
-     extracted from main.qml and run in a second engine, over a table of boundary values;
+  1. the worst-case strings (the horizontal width reserve and the vertical sample lines), written out here;
+  2. how main.qml uses the registry: the per-stat panel code is gone, the keys main.qml feeds the templates
+     match the ones the templates read, the formatters read only the settings main.qml passes in;
   3. literal boundary cases of the formatters, render(), alerts, scales and sensor gating;
-  4. the structure: unique ids, labels, sensor ids, and every settings key of main.xml accounted for.
+  4. the structure: unique ids, labels, sensor ids, and every settings key of main.xml accounted for;
+  5. the registry against tests/golden/panel_text.json: the panel text the hand-written code of release
+     v0.9.1 produced for every stat, kind, orientation and unit mode over a grid of values (regenerate it
+     only on purpose, see tests/golden/generate.py).
 """
 import json
 import os
@@ -88,36 +90,27 @@ def vlines(mid, compact, vals, **kw):
     return run(M, "verticalLines(byId(%s),%s,%s,%s)" % (json.dumps(mid), str(compact).lower(), vals_js(vals), ctx(**kw)))
 
 
-# ---------------------------------------------------------------- 1. strings equal main.qml's
-print("1. panel strings against main.qml")
-# The m* TextMetrics: id -> (stat, compact). Each text is a literal or a `root.useF ? "F" : "C"` pair.
-MSTAT = {"mCpu": ("cpu", False), "mCpuC": ("cpu", True), "mRam": ("ram", False), "mRamC": ("ram", True),
-         "mTemp": ("temp", False), "mTempC": ("temp", True), "mFreq": ("freq", False), "mFreqC": ("freq", True),
-         "mNet": ("net", False), "mNetC": ("net", True), "mBat": ("bat", False), "mBatC": ("bat", True),
-         "mFan": ("fan", False), "mFanC": ("fan", True)}
-found = {}
-for m in re.finditer(r'TextMetrics \{ id: (m\w+);\s*font: [^;]+;\s*text: (.+?) \}', MAIN_QML):
-    found[m.group(1)] = m.group(2)
-extra = set(found) - set(MSTAT) - {"mLine", "mPopupLabel"}
-equal("main.qml has no m* TextMetrics the test does not know", sorted(extra), [])
-equal("every expected m* TextMetrics exists in main.qml", sorted(set(MSTAT) - set(found)), [])
-for mid, text in sorted(found.items()):
-    if mid not in MSTAT:
-        continue
-    stat, compact = MSTAT[mid]
-    tern = re.match(r'root\.useF \? "(.*?)" : "(.*?)"$', text)
-    lit = re.match(r'"(.*)"$', text)
-    variants = {True: tern.group(1), False: tern.group(2)} if tern else {False: lit.group(1), True: lit.group(1)}
-    for useF in ([False, True] if tern else [False]):
-        got = run(M, "reserveText(byId(%s),%s,%s)" % (json.dumps(stat), str(compact).lower(), ctx(useF=useF)))
-        equal("%s%s horizontal %s%s" % (stat, " compact" if compact else " full", "F" if useF else "C", "" if tern else " (unit-less)"),
-              got, variants[useF])
-# main.qml's mNet is "999 MB/s" in both unit modes, so the horizontal sample is the same in bits mode.
+# ---------------------------------------------------------------- 1. worst-case strings
+print("1. worst-case strings (horizontal reserve and vertical lines)")
+# Written out here as a readable second statement of the golden data below. The worst-case text of a stat is
+# what the strip reserves its width for, so a change here is a change of the panel's width.
+RESERVE = {
+    ("cpu", False, False): "CPU 100%", ("cpu", True, False): "C 100%",
+    ("ram", False, False): "RAM 100%", ("ram", True, False): "R 100%",
+    ("temp", False, False): "100°C", ("temp", False, True): "212°F", ("temp", True, False): "100°", ("temp", True, True): "212°",
+    ("freq", False, False): "9.9 GHz", ("freq", True, False): "9.9G",
+    ("net", False, False): "↓999 MB/s ↑999 MB/s", ("net", True, False): "↓999M ↑999M",
+    ("bat", False, False): "BAT 100% ↓", ("bat", True, False): "B 100%↓",
+    ("fan", False, False): "9999 RPM", ("fan", True, False): "9999",
+}
+for (stat, compact, useF), want in sorted(RESERVE.items()):
+    got = run(M, "reserveText(byId(%s),%s,%s)" % (json.dumps(stat), str(compact).lower(), ctx(useF=useF)))
+    equal("%s%s horizontal reserve%s" % (stat, " compact" if compact else " full", " F" if useF else ""), got, want)
+# The net reserve is the bytes text in both unit modes (a quirk kept on purpose: the width is the same in bits mode).
 equal("net full reserve, bits mode keeps the bytes text", run(M, "reserveText(byId('net'),false,%s)" % ctx(netBits=True)),
       "\u2193999 MB/s \u2191999 MB/s")
 
-# Vertical lines: the worst-case lines of verticalLines(id, compact, true) in main.qml, written out here.
-# Source: verticalCaption(), statValue() samples (checked below against main.qml), valueText(), netLines().
+# Vertical lines: the worst-case lines (the widest line sets the width of a stat on a vertical panel).
 VERTICAL = {
     ("cpu", False, False): ["CPU", "100%"],
     ("ram", False, False): ["RAM", "100%"],
@@ -133,70 +126,49 @@ for (stat, compact, useF), want in sorted(VERTICAL.items()):
     equal("%s vertical%s%s" % (stat, " compact" if compact else "", " F" if useF else ""), got, want)
 equal("net vertical, bits mode", vlines("net", False, sample("net", True, netBits=True), netBits=True),
       ["Net", "↓999M", "↑999M"])
-# Stats without a verticalCompact must ignore compact (statCompact only shortens temp, freq and bat).
+# Stats without a verticalCompact must ignore compact.
 for stat in ("cpu", "ram", "net", "fan"):
     equal("%s vertical ignores compact" % stat, vlines(stat, True, sample(stat, True)), vlines(stat, False, sample(stat, True)))
 equal("only temp, freq and bat have verticalCompact",
       run(M, "METRICS.filter(function(m){return !!m.panel.verticalCompact}).map(function(m){return m.id})"),
       ["temp", "freq", "bat"])
-check("main.qml statCompact lists the same three stats",
-      re.search(r'if \(id !== "temp" && id !== "freq" && id !== "bat"\) return false', MAIN_QML) is not None)
+equal("only the fan has a decoration", run(M, "METRICS.filter(function(m){return !!m.panel.decoration}).map(function(m){return m.id + ':' + m.panel.decoration})"),
+      ["fan:fanIcon"])
+check("the vertical battery sample is the charging state", sample("bat", True)["state"] == 1)
+check("the net sample is 999e6 (bits: /8)", sample("net", True)["down"] == 999e6 and sample("net", True, netBits=True)["down"] == 999e6 / 8)
 
-# The facts the literal vertical lines above rest on, checked against main.qml.
-cap_src = re.search(r'function verticalCaption\(id\) \{(.*?)\n    \}', MAIN_QML, re.S).group(1)
-captions = dict(re.findall(r'case "(\w+)":\s+return "([^"]+)"', cap_src))
-for stat in ("cpu", "ram", "temp", "freq", "net", "bat", "fan"):
-    equal("caption of %s in main.qml" % stat, captions.get(stat), run(M, "byId('%s').panel.vertical[0]" % stat))
-sv_src = re.search(r'function statValue\(id, sample\) \{(.*?)\n    \}', MAIN_QML, re.S).group(1)
-qml_samples = {k: int(v) for k, v in re.findall(r'case "(\w+)":\s+return sample \? (\d+) :', sv_src)}
-for stat, key in (("cpu", "value"), ("ram", "value"), ("temp", "value"), ("freq", "value"), ("fan", "value"), ("bat", "percent")):
-    equal("statValue sample of %s in main.qml" % stat, qml_samples.get(stat), sample(stat, False)[key])
-check("main.qml vertical battery sample uses the charging state",
-      "batValue(v, sample ? 1 : batState, compact)" in MAIN_QML and sample("bat", True)["state"] == 1)
-check("main.qml net sample is 999e6 (bits: /8)", "netBits ? 999e6 / 8 : 999e6" in MAIN_QML
-      and sample("net", True)["down"] == 999e6 and sample("net", True, netBits=True)["down"] == 999e6 / 8)
-
-# ---------------------------------------------------------------- 2. formatters against main.qml's own
-print("2. formatters against the functions in main.qml")
-# Pull the pure formatting functions out of main.qml and run them in a second engine.
-blocks = [
-    re.search(r'// ---- formatting helpers ----\n(.*?)\n    // Each temperature is highlighted', MAIN_QML, re.S).group(1),
-    re.search(r'(    function tempShort\(v\).*?    function rpmNumber\(v\)[^\n]*)', MAIN_QML, re.S).group(1),
-]
-Q = make_engine("var useF = false, netBits = false, batPercent, batState, batterySummary = {}, netDown = {}, netUp = {}, fanRpm;\n"
-                + "\n".join(blocks))
-VALUES = ["undefined", "null", '""', "NaN", "Infinity", '"abc"', "0", "0.4", "0.5", "1", "9.9", "9.94", "9.95", "9.96",
-          "49.5", "50.5", "99.5", "100", "100.4", "212", "36.6", "-5", "800", "999", "999.4", "999.49", "999.5", "999.6", "1000",
-          "9949", "9950", "9999", "99499", "99500", "999499", "999500", "1e6", "1.5e9", "999e6", "999.9e6", "1e12", "1073741824",
-          "8589934592", "1234.56", '"42"', "0.04", "-0.5"]
-# (registry format, main.qml expression with %s as the value)
-PAIRS = [("pct", "pct(%s)"), ("gib", "gib(%s)"), ("wh", "wh(%s)"), ("ghz", "ghzNumber(%s)"), ("freq", "freq(%s)"),
-         ("freqShort", "freqShort(%s)"), ("bytes", "bytesText(%s)"), ("rpm", "rpmNumber(%s)"),
-         ("temp", "temp(%s)"), ("tempShort", "tempShort(%s)"), ("rate", "rate(%s)"), ("rateShort", "rateShort(%s)")]
-mismatches = 0
-cases = 0
-for useF in (False, True):
-    for bits in (False, True):
-        Q.evaluate("useF = %s; netBits = %s" % (str(useF).lower(), str(bits).lower()))
-        for fmt, expr in PAIRS:
-            for v in VALUES:
-                cases += 1
-                want = run(Q, expr % v)
-                got = run(M, "FORMATS.%s(%s,%s)" % (fmt, v, ctx(useF=useF, netBits=bits)))
-                if got != want:
-                    mismatches += 1
-                    print("FAIL  %s(%s) useF=%s bits=%s got %r want %r" % (fmt, v, useF, bits, got, want))
-check("formatters match main.qml (%d cases)" % cases, mismatches == 0, "%d mismatches" % mismatches)
-# Battery value text and the arrow, over every state.
-Q.evaluate("useF = false; netBits = false")
-bad = 0
-for p in ["undefined", "0", "14.6", "15", "49.5", "100", '"x"']:
-    for s in (-1, 0, 1):
-        for compact, tmpl in ((False, "{percent:pct}{state:arrowSp}"), (True, "{percent:pct}{state:arrow}")):
-            want = run(Q, "batValue(%s,%d,%s)" % (p, s, str(compact).lower()))
-            got = run(M, "render(%s,{percent:%s,state:%d},{})" % (json.dumps(tmpl), p, s))
-            bad += got != want
-check("battery value text matches batValue (all states)", bad == 0, "%d mismatches" % bad)
+# ---------------------------------------------------------------- 2. how main.qml uses the registry
+print("2. main.qml uses the registry")
+check("main.qml imports Metrics.js", re.search(r'^import "Metrics\.js" as M$', MAIN_QML, re.M) is not None)
+# The per-stat panel code moved into the registry; none of it may come back (a second copy would drift).
+for gone in ("function valueText", "function netLines", "function verticalCaption", "function statValue", "function netText",
+             "function rateParts", "function batValue", "function arrowFor", "function tempShort", "function freqShort",
+             "function rpmNumber", "function tempNumber", "function rateShort", "function batText",
+             "TextMetrics { id: mCpu", "TextMetrics { id: mFan", "TextMetrics { id: mNet", "TextMetrics { id: mTemp"):
+    check("main.qml no longer has `%s`" % gone, gone not in MAIN_QML)
+check("statText delegates to M.panelText", "M.panelText(m, compact, vert, statVals(id), textCtx)" in MAIN_QML)
+check("verticalLines delegates to M.verticalLines", "M.verticalLines(m, compact," in MAIN_QML)
+check("the horizontal reserve is rendered by M.reserveText", "text: M.reserveText(M.byId(statId), compact, root.textCtx)" in MAIN_QML)
+check("the reserve items come from the registry's entries", "M.METRICS.length" in MAIN_QML and "model: root.reserveKinds" in MAIN_QML)
+check("statCompact asks the registry which stats have a shorter vertical form", "m.panel.verticalCompact" in MAIN_QML)
+check("the icon width comes from the registry's decoration", 'm.panel.decoration === "fanIcon"' in MAIN_QML)
+# The settings the formatters read must be the ones main.qml puts into the context: a formatter that starts
+# reading another setting would silently get undefined.
+fmt_src = re.search(r'var FORMATS = \{(.*?)\n\}\n', METRICS_JS, re.S).group(1) + re.search(r'function rateParts.*?\n\}\nfunction tempNumber.*?\n\}', METRICS_JS, re.S).group(0)
+ctx_keys = sorted(set(re.findall(r'ctx(?: && ctx)?\.(\w+)', fmt_src)))
+equal("the formatters read only these settings", ctx_keys, ["netBits", "useF"])
+equal("main.qml puts exactly those into textCtx", sorted(re.findall(r'(\w+): \1', re.search(r'textCtx: \(\{(.*?)\}\)', MAIN_QML).group(1))), ctx_keys)
+# The values main.qml feeds each stat's templates: every key a template reads must be supplied.
+sv_src = re.search(r'function statVals\(id\) \{(.*?)\n    \}', MAIN_QML, re.S).group(1)
+supplied = {sid: sorted(re.findall(r'(\w+):', body)) for sid, body in re.findall(r'case "(\w+)":\s+return \{(.*?)\}', sv_src)}
+for stat in run(M, "DEFAULT_ORDER"):
+    used = run(M, "(function(){var p=byId(%s).panel, t=[p.full,p.compact].concat(p.vertical,p.verticalCompact||[]), k={}; "
+                  "t.forEach(function(x){(x.match(/\\{(\\w+)/g)||[]).forEach(function(y){k[y.slice(1)]=1})}); return Object.keys(k).sort()})()" % json.dumps(stat))
+    equal("statVals of %s supplies the keys its templates read" % stat, supplied.get(stat), used)
+    equal("the sample of %s has the same keys" % stat, sorted(run(M, "Object.keys(byId(%s).panel.sample)" % json.dumps(stat))), used)
+# The wrappers the popup keeps call formatters that exist.
+for f in set(re.findall(r'M\.FORMATS\.(\w+)', MAIN_QML)):
+    check("main.qml's M.FORMATS.%s exists" % f, run(M, "typeof FORMATS.%s" % f) == "function")
 
 # ---------------------------------------------------------------- 3. literal boundaries
 print("3. boundary cases")

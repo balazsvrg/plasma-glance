@@ -8,6 +8,7 @@ import org.kde.ksysguard.sensors as Sensors
 import org.kde.quickcharts as Charts
 import org.kde.plasma.plasma5support as P5Support
 import org.kde.kitemmodels as KItemModels
+import "Metrics.js" as M
 
 PlasmoidItem {
     id: root
@@ -563,13 +564,24 @@ PlasmoidItem {
     function isNum(v) {
         return v !== undefined && v !== null && v !== "" && isFinite(Number(v))
     }
-    function pct(v)   { return isNum(v) ? Math.round(v) + "%" : "--%" }
-    function tempNumber(v) { return isNum(v) ? String(Math.round(useF ? v * 9 / 5 + 32 : v)) : "--" }
-    function temp(v) { return tempNumber(v) + (useF ? "°F" : "°C") }
-    function gib(v)   { return isNum(v) ? (v / 1073741824).toFixed(1) + " GiB" : "-- GiB" }
-    function rpmText(v) { return rpmNumber(v) + " RPM" }
-    function wh(v) { return isNum(v) ? Number(v).toFixed(1) + " Wh" : "-- Wh" }
-    function batText() { return batValue(batPercent, batState, false) }
+    // The settings the registry's formatters read (Metrics.js is a pure library: it cannot see root's
+    // properties). Every text and width binding reads this property, so it re-evaluates when one changes.
+    readonly property var textCtx: ({ useF: useF, netBits: netBits })
+    // Thin wrappers for the popup rows: the formatters live in Metrics.js (M.FORMATS); the settings they
+    // need come in through textCtx, read here so the calling binding re-evaluates when they change.
+    function pct(v)  { return M.FORMATS.pct(v) }
+    function temp(v) { return M.FORMATS.temp(v, textCtx) }
+    function gib(v)  { return M.FORMATS.gib(v) }
+    function wh(v)   { return M.FORMATS.wh(v) }
+    function rate(v) { return M.FORMATS.rate(v, textCtx) }
+    function bytesText(v) { return M.FORMATS.bytes(v) }
+    function ghzNumber(v) { return M.FORMATS.ghz(v) }
+    function freq(v) { return M.FORMATS.freq(v) }
+    function rpmText(v) { return M.render(M.byId("fan").popup.rows[0].value, { value: v }, textCtx) }
+    // The popup's battery row: the percentage, the state arrow and the energy of all batteries.
+    function batRowText() {
+        return M.render(M.byId("bat").popup.rows[0].value, { percent: batPercent, state: batState, energy: batEnergyTotal() }, textCtx)
+    }
     // Hours as "3h 12m" or "45m"; empty when it cannot be estimated.
     function hoursText(hours) {
         if (!isFinite(hours) || hours < 0 || hours > 99) return ""
@@ -583,31 +595,6 @@ PlasmoidItem {
         if (batState === 0 || !isNum(ms) || Number(ms) <= 0) return ""
         return hoursText(Number(ms) / 3600000)
     }
-    // Network rates arrive in bytes/s. Decimal units: 1 KB = 1000 B (bits: x8).
-    function rateParts(v) {
-        var x = netBits ? Number(v) * 8 : Number(v)
-        var units = netBits ? ["b", "Kb", "Mb", "Gb"] : ["B", "KB", "MB", "GB"]
-        var i = 0
-        while (x >= 999.5 && i < 3) { x /= 1000; i++ }       // 999.6 would round to "1000"
-        return { n: (x >= 9.95 || i === 0) ? String(Math.round(x)) : x.toFixed(1), unit: units[i] }
-    }
-    function rate(v)      { if (!isNum(v)) return "--"; var p = rateParts(v); return p.n + " " + p.unit + "/s" }
-    function rateShort(v) { if (!isNum(v)) return "--"; var p = rateParts(v); return p.n + p.unit.charAt(0) }
-    function netText()      { return "↓" + rate(netDown.value) + " ↑" + rate(netUp.value) }
-    function bytesText(v) {
-        if (!isNum(v)) return "--"
-        var x = Number(v)
-        if (x >= 1e9) return (x / 1e9).toFixed(1) + " GB"
-        if (x >= 1e6) return (x / 1e6).toFixed(1) + " MB"
-        return Math.round(x / 1e3) + " KB"
-    }
-    // CPU frequency arrives in MHz; always shown in GHz so the text never outgrows the "9.9 GHz" reserve.
-    function ghzNumber(v) { return isNum(v) ? (v / 1000).toFixed(1) : "--" }
-    function freq(v) {
-        if (!isNum(v)) return "-- GHz"
-        return ghzNumber(v) + " GHz"
-    }
-
     // Each temperature is highlighted by its own value, so the colour always
     // matches the number shown next to it.
     readonly property bool avgHot: isNum(tempAvg.value) && tempAvg.value >= warnTempC
@@ -695,35 +682,46 @@ PlasmoidItem {
         return ids
     }
 
-    // Widest possible text per stat, so the strip does not resize when a number gains a digit.
-    TextMetrics { id: mCpu;   font: Kirigami.Theme.defaultFont; text: "CPU 100%" }
-    TextMetrics { id: mCpuC;  font: Kirigami.Theme.defaultFont; text: "C 100%" }
-    TextMetrics { id: mRam;   font: Kirigami.Theme.defaultFont; text: "RAM 100%" }
-    TextMetrics { id: mRamC;  font: Kirigami.Theme.defaultFont; text: "R 100%" }
-    TextMetrics { id: mTemp;  font: Kirigami.Theme.defaultFont; text: root.useF ? "212°F" : "100°C" }
-    TextMetrics { id: mTempC; font: Kirigami.Theme.defaultFont; text: root.useF ? "212°" : "100°" }
-    TextMetrics { id: mFreq;  font: Kirigami.Theme.defaultFont; text: "9.9 GHz" }
-    TextMetrics { id: mFreqC; font: Kirigami.Theme.defaultFont; text: "9.9G" }
-    TextMetrics { id: mNet;   font: Kirigami.Theme.defaultFont; text: "↓999 MB/s ↑999 MB/s" }
-    TextMetrics { id: mNetC;  font: Kirigami.Theme.defaultFont; text: "↓999M ↑999M" }
-    TextMetrics { id: mBat;   font: Kirigami.Theme.defaultFont; text: "BAT 100% ↓" }
-    TextMetrics { id: mBatC;  font: Kirigami.Theme.defaultFont; text: "B 100%↓" }
-    TextMetrics { id: mFan;   font: Kirigami.Theme.defaultFont; text: "9999 RPM" }
-    TextMetrics { id: mFanC;  font: Kirigami.Theme.defaultFont; text: "9999" }
+    // Widest possible text per stat and kind (full, compact), so the strip does not resize when a number gains
+    // a digit. One TextMetrics per registry entry and kind; the text is the registry's worst-case sample
+    // rendered with the same templates as the panel. (TextMetrics.width, not FontMetrics.advanceWidth: the
+    // two differ by a fraction of a pixel, and the strip has always been sized from the former.)
+    property var reserveItems: ({})                       // "<id>" / "<id>C" -> TextMetrics
+    Instantiator {
+        id: reserveInst
+        model: root.reserveKinds
+        delegate: TextMetrics {
+            required property var modelData
+            readonly property string statId: modelData.id
+            readonly property bool compact: modelData.compact
+            font: Kirigami.Theme.defaultFont
+            text: M.reserveText(M.byId(statId), compact, root.textCtx)
+        }
+        // The map is a property, so a width read before the items existed is read again once they do.
+        onObjectAdded: root.reserveItems = reserveMap()
+        function reserveMap() {
+            var map = {}
+            for (var i = 0; i < count; ++i) {
+                var it = objectAt(i)
+                if (it) map[it.statId + (it.compact ? "C" : "")] = it
+            }
+            return map
+        }
+    }
+    readonly property var reserveKinds: {
+        var list = []
+        for (var i = 0; i < M.METRICS.length; ++i) {
+            list.push({ id: M.METRICS[i].id, compact: false })
+            list.push({ id: M.METRICS[i].id, compact: true })
+        }
+        return list
+    }
     FontMetrics { id: fm; font: Kirigami.Theme.defaultFont }                        // width of any string
     TextMetrics { id: mLine;  font: Kirigami.Theme.defaultFont; text: "Ag" }       // one line of text
 
     function reservedWidth(id, compact) {
-        switch (id) {
-        case "cpu":  return compact ? mCpuC.width  : mCpu.width
-        case "ram":  return compact ? mRamC.width  : mRam.width
-        case "temp": return compact ? mTempC.width : mTemp.width
-        case "freq": return compact ? mFreqC.width : mFreq.width
-        case "net":  return compact ? mNetC.width  : mNet.width
-        case "bat":  return compact ? mBatC.width  : mBat.width
-        case "fan":  return compact ? mFanC.width  : mFan.width
-        }
-        return 0
+        var item = reserveItems[id + (compact ? "C" : "")]
+        return item ? item.width : 0
     }
 
     // Widest line of a stat's text on a vertical panel (what must fit in the panel's thickness): the
@@ -732,7 +730,7 @@ PlasmoidItem {
         void fm.font                         // re-measure when the font changes (advanceWidth is not bindable)
         var lines = verticalLines(id, false, true), w = 0
         for (var i = 0; i < lines.length; ++i) w = Math.max(w, fm.advanceWidth(lines[i]))
-        if (id === "fan") w = Math.max(w, Kirigami.Units.iconSizes.smallMedium)
+        if (hasIcon(id)) w = Math.max(w, Kirigami.Units.iconSizes.smallMedium)
         return Math.ceil(w)
     }
     // The panel's thickness (set by the vertical compact view); 0 until known or when horizontal.
@@ -741,22 +739,11 @@ PlasmoidItem {
     // full text being wider than the panel (shortening saves no length there, so it is not a length step).
     function statCompact(id) {
         if (!vertical) return lengthLevel >= 2
-        // Only these three have a shorter form; measuring the rest could never change their text.
-        if (id !== "temp" && id !== "freq" && id !== "bat") return false
+        // Only a stat with a shorter vertical form can change; measuring the rest could never change its text.
+        var m = M.byId(id)
+        if (!m || !m.panel.verticalCompact) return false
         return panelThickness > 0 && verticalWidth(id) > panelThickness - Kirigami.Units.smallSpacing * 2
     }
-
-    function tempShort(v) { return tempNumber(v) + "°" }
-    function freqShort(v) {
-        if (!isNum(v)) return "--G"
-        return ghzNumber(v) + "G"
-    }
-    function arrowFor(state) { return state > 0 ? "↑" : (state < 0 ? "↓" : "") }
-    function batValue(percent, state, compact) {
-        var a = arrowFor(state)
-        return pct(percent) + (compact ? a : (a ? " " + a : ""))
-    }
-    function rpmNumber(v) { return isNum(v) ? String(Math.round(Number(v))) : "--" }
 
     // Per-stat colours, history and graph scale, so a panel cell needs nothing but its id.
     function statAlert(id) { return (id === "temp" && avgHot) || (id === "bat" && batLow) }
@@ -786,71 +773,38 @@ PlasmoidItem {
         return 100
     }
 
-    // The value of a stat and a worst-case sample of it (the widest it can get, for width calculations).
-    function statValue(id, sample) {
+    // ---- panel text ----
+    // The values a stat's templates read, live (keys as in the registry's templates).
+    function statVals(id) {
         switch (id) {
-        case "cpu":  return sample ? 100 : cpuUsage.value
-        case "ram":  return sample ? 100 : memPercent.value
-        case "temp": return sample ? 100 : tempAvg.value
-        case "freq": return sample ? 9900 : freqAvg.value      // 9.9 GHz, as the horizontal reserve
-        case "bat":  return sample ? 100 : batPercent
-        case "fan":  return sample ? 9999 : fanRpm
+        case "cpu":  return { value: cpuUsage.value }
+        case "ram":  return { value: memPercent.value }
+        case "temp": return { value: tempAvg.value }
+        case "freq": return { value: freqAvg.value }
+        case "net":  return { down: netDown.value, up: netUp.value }
+        case "bat":  return { percent: batPercent, state: batState }
+        case "fan":  return { value: fanRpm }
         }
-        return 0
+        return {}
     }
-    // The value part of a stat's text (no caption), shared by the horizontal and the vertical panel.
-    function valueText(id, compact, sample) {
-        var v = statValue(id, sample)
-        switch (id) {
-        case "cpu":
-        case "ram":  return pct(v)
-        case "temp": return compact ? tempShort(v) : temp(v)
-        case "freq": return compact ? freqShort(v) : freq(v)
-        case "bat":  return batValue(v, sample ? 1 : batState, compact)
-        case "fan":  return rpmNumber(v)
-        }
-        return ""
-    }
-    // Net has two values; in bits mode the sample is scaled so it is the widest in either unit.
-    function netLines(sample) {
-        var d = sample ? (netBits ? 999e6 / 8 : 999e6) : netDown.value
-        var u = sample ? d : netUp.value
-        return ["↓" + rateShort(d), "↑" + rateShort(u)]
-    }
-    // The text of a stat in the panel, for the current step (compact or full) and orientation.
-    // On a vertical panel the caption line is always kept, so it is easy to tell which stat is shown;
-    // only the value line is shortened.
+    // The text of a stat in the panel, for the current step (compact or full) and orientation, from the
+    // registry's templates. On a vertical panel the caption line is always kept, so it is easy to tell
+    // which stat is shown; only the value line is shortened.
     function statText(id, compact, vert) {
-        if (vert) return verticalLines(id, compact, false).join("\n")
-        var v = valueText(id, compact, false)
-        switch (id) {
-        case "cpu":  return (compact ? "C " : "CPU ") + v
-        case "ram":  return (compact ? "R " : "RAM ") + v
-        case "temp":
-        case "freq": return v
-        case "net":  { var n = netLines(false); return compact ? n[0] + " " + n[1] : netText() }
-        case "bat":  return (compact ? "B " : "BAT ") + v
-        case "fan":  return compact ? v : rpmText(fanRpm)
-        }
-        return ""
-    }
-    function verticalCaption(id) {
-        switch (id) {
-        case "cpu":  return "CPU"
-        case "ram":  return "RAM"
-        case "temp": return "Temp"
-        case "freq": return "Freq"
-        case "net":  return "Net"
-        case "bat":  return "Bat"
-        case "fan":  return "Fan"
-        }
-        return ""
+        var m = M.byId(id)
+        return m ? M.panelText(m, compact, vert, statVals(id), textCtx) : ""
     }
     // The lines of a stat on a vertical panel: caption, then the value line(s). `sample` gives the widest
     // possible values instead of the live ones.
     function verticalLines(id, compact, sample) {
-        var cap = verticalCaption(id)
-        return id === "net" ? [cap].concat(netLines(sample)) : [cap, valueText(id, compact, sample)]
+        var m = M.byId(id)
+        if (!m) return []
+        return M.verticalLines(m, compact, sample ? M.sampleVals(m, true, textCtx) : statVals(id), textCtx)
+    }
+    // Stats with a fixed-size icon before the text (the fan), from the registry.
+    function hasIcon(id) {
+        var m = M.byId(id)
+        return !!m && m.panel.decoration === "fanIcon"
     }
 
     // Space one stat takes at a given step (width when horizontal, height when vertical).
@@ -865,12 +819,12 @@ PlasmoidItem {
         var gap = Kirigami.Units.smallSpacing
         if (!vertical) {
             var w = reservedWidth(id, compact)
-            if (id === "fan") w += Kirigami.Units.iconSizes.smallMedium + gap
+            if (hasIcon(id)) w += Kirigami.Units.iconSizes.smallMedium + gap
             if (inlineGraph) w += gap + inlineGraphWidth
             return w
         }
         var h = verticalLines(id, false, true).length * mLine.height    // caption + value line(s)
-        if (id === "fan") h += Kirigami.Units.iconSizes.smallMedium
+        if (hasIcon(id)) h += Kirigami.Units.iconSizes.smallMedium
         if (inlineGraph) h += Kirigami.Units.gridUnit
         return h
     }
@@ -1368,7 +1322,7 @@ PlasmoidItem {
         ColumnLayout {
             PopupRow {
                 name: "Battery"
-                value: root.batText() + (root.isNum(root.batEnergyTotal()) ? "  (" + root.wh(root.batEnergyTotal()) + ")" : "")
+                value: root.batRowText()
                 valueColor: root.statTextColor("bat")
             }
             // One line per battery, only when "each battery separately" is chosen.
