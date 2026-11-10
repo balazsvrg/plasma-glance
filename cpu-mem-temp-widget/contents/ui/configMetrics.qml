@@ -24,6 +24,10 @@ KCM.SimpleKCM {
     property alias cfg_showBat: batPanel.checked
     property alias cfg_popupBat: batPopup.checked
     property int cfg_batteryCount           // written by the widget when it detects batteries
+    property alias cfg_showFan: fanPanel.checked
+    property alias cfg_popupFan: fanPopup.checked
+    property alias cfg_fanAnimate: fanAnimate.checked
+    property int cfg_fanCount               // written by the widget when it detects fans
     property bool cfg_batSeparate
 
     property bool cfg_showCpuDefault
@@ -42,6 +46,10 @@ KCM.SimpleKCM {
     property bool cfg_popupBatDefault
     property int cfg_batteryCountDefault
     property bool cfg_batSeparateDefault
+    property bool cfg_showFanDefault
+    property bool cfg_popupFanDefault
+    property bool cfg_fanAnimateDefault
+    property int cfg_fanCountDefault
 
     GridLayout {
         columns: 3
@@ -84,6 +92,18 @@ KCM.SimpleKCM {
         QQC2.Label { text: i18n("Battery"); visible: page.cfg_batteryCount > 0 }
         QQC2.CheckBox { id: batPanel; visible: page.cfg_batteryCount > 0; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: batPopup; visible: page.cfg_batteryCount > 0; Layout.alignment: Qt.AlignHCenter }
+
+        // Only shown on machines where the widget found a fan sensor.
+        QQC2.Label { text: i18n("Fan speed"); visible: page.cfg_fanCount > 0 }
+        QQC2.CheckBox { id: fanPanel; visible: page.cfg_fanCount > 0; Layout.alignment: Qt.AlignHCenter }
+        QQC2.CheckBox { id: fanPopup; visible: page.cfg_fanCount > 0; Layout.alignment: Qt.AlignHCenter }
+        QQC2.CheckBox {
+            id: fanAnimate
+            visible: page.cfg_fanCount > 0
+            Layout.columnSpan: 3
+            Layout.leftMargin: Kirigami.Units.gridUnit
+            text: i18n("Animate the fan icon (slow, medium or fast spin with the real fan speed)")
+        }
 
         // Only offered when there are several batteries to separate.
         QQC2.Label {

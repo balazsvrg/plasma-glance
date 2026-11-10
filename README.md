@@ -56,9 +56,16 @@ Right-click the widget in the panel and choose **Configure…**. There are three
 | CPU frequency | off | off |
 | Network speed (all interfaces combined) | off | off |
 | Battery (laptops only; hidden when none is found) | off | off |
+| Fan speed (hidden when no fan sensor is found) | off | off |
 | Hottest core, per-core temperatures | n/a | on |
 
 Turning off per-core temperatures also stops its sensors.
+
+**Fan speed** shows the RPM of the fastest fan next to a small three-blade fan icon that spins
+at one of three speeds (under 2500 RPM, 2500 to 4000, over 4000) and stands still at 0 RPM. The
+animation is stepped at about 12 frames per second to keep it cheap, and can be turned off with
+*Animate the fan icon* in the Metrics tab. Fans are discovered from the sensor tree
+(`lmsensors/<chip>/fanN`), so no hardware names are hard-coded.
 
 On a laptop with **several batteries**, the Metrics tab also offers *Popup battery view*:
 **Combined** (default) or **Each battery separately**. The panel always shows the combined
@@ -92,6 +99,7 @@ Sensor IDs used (check with `kstatsviewer --list`):
 `memory/physical/total`, `cpu/all/averageTemperature`, `cpu/all/maximumTemperature`,
 `cpu/all/coreCount`, `cpu/cpuN/temperature`,
 `cpu/all/averageFrequency`, `cpu/all/minimumFrequency`, `cpu/all/maximumFrequency`,
+`lmsensors/<chip>/fanN` (discovered),
 `network/all/download`, `network/all/upload`, `network/all/totalDownload`, `network/all/totalUpload`.
 Battery data comes from Plasma's power-management engine (`powermanagement`, via
 `org.kde.plasma.plasma5support`), the same source KDE's own battery widget uses. KDE's

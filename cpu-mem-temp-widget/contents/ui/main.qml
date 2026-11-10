@@ -7,6 +7,7 @@ import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
 import org.kde.quickcharts as Charts
 import org.kde.plasma.plasma5support as P5Support
+import org.kde.kitemmodels as KItemModels
 
 PlasmoidItem {
     id: root
@@ -31,6 +32,9 @@ PlasmoidItem {
     readonly property bool popupNet: Plasmoid.configuration.popupNet
     readonly property bool popupBat: Plasmoid.configuration.popupBat
     readonly property bool batSeparate: Plasmoid.configuration.batSeparate
+    readonly property bool showFan: Plasmoid.configuration.showFan
+    readonly property bool popupFan: Plasmoid.configuration.popupFan
+    readonly property bool fanAnimate: Plasmoid.configuration.fanAnimate
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs }
@@ -112,6 +116,94 @@ PlasmoidItem {
     // Lets the graph history treat the combined percentage like a sensor.
     QtObject { id: batSensor; readonly property var value: root.batPercent }
 
+    // ---- fan ----
+    // The fan sensor ID contains the hardware chip name (lmsensors/<chip>/fanN), so
+    // fans are discovered from the sensor tree instead of being hard-coded.
+    property var fanIds: []
+    property bool fanDiscoveryDone: false
+    readonly property bool hasFan: fanIds.length > 0
+    readonly property bool fanShown: showFan && hasFan
+    readonly property bool popupFanShown: popupFan && hasFan
+    readonly property bool fanWanted: fanShown || popupFanShown
+
+    component FanDiscovery: Item {
+        id: fanDisc
+        signal found(var ids)
+
+        Sensors.SensorTreeModel { id: fanTree }
+        KItemModels.KDescendantsProxyModel { id: fanFlat; model: fanTree }
+        // The tree fills in gradually, so scan a moment after the last change.
+        Timer { id: fanScan; interval: 800; onTriggered: fanDisc.scanNow() }
+        Connections {
+            target: fanFlat
+            function onRowsInserted() { fanScan.restart() }
+            function onRowsRemoved()  { fanScan.restart() }
+            function onModelReset()   { fanScan.restart() }
+        }
+        Component.onCompleted: fanScan.restart()
+
+        function scanNow() {
+            var ids = [], n = fanFlat.rowCount()
+            for (var i = 0; i < n; ++i) {
+                var id = String(fanFlat.data(fanFlat.index(i, 0), Sensors.SensorTreeModel.SensorId))
+                if (/^lmsensors\/[^\/]+\/fan\d+$/.test(id)) ids.push(id)
+            }
+            ids.sort()
+            found(ids)
+        }
+    }
+
+    // Alive only while a fan stat is shown, plus once at start-up so the settings
+    // pages know whether a fan exists.
+    Loader {
+        active: root.fanWanted || !root.fanDiscoveryDone
+        sourceComponent: FanDiscovery {
+            onFound: function (ids) {
+                if (JSON.stringify(ids) !== JSON.stringify(root.fanIds))
+                    root.fanIds = ids
+                root.fanDiscoveryDone = true
+                if (Plasmoid.configuration.fanCount !== ids.length)
+                    Plasmoid.configuration.fanCount = ids.length
+            }
+        }
+    }
+
+    property var fanItems: []
+    Repeater {
+        id: fanRepeater
+        model: root.fanWanted ? root.fanIds : []
+        onItemAdded: root.fanItems = collectFans()
+        onItemRemoved: root.fanItems = collectFans()
+        function collectFans() {
+            var items = []
+            for (var i = 0; i < count; ++i) { var it = itemAt(i); if (it) items.push(it) }
+            return items
+        }
+        delegate: Item {
+            id: fanSensorItem
+            required property var modelData
+            Sensors.Sensor { id: fanS; sensorId: fanSensorItem.modelData; updateRateLimit: root.refreshMs }
+            readonly property var rpm: fanS.value
+        }
+    }
+
+    // The fastest fan sets the speed.
+    function fanRpmMax() {
+        var best = 0, any = false
+        for (var i = 0; i < fanItems.length; ++i) {
+            var v = fanItems[i].rpm
+            if (isNum(v)) { best = Math.max(best, Number(v)); any = true }
+        }
+        return any ? best : undefined
+    }
+    readonly property var fanRpm: fanRpmMax()
+    // 0 stopped, 1 slow, 2 medium, 3 fast: drives the icon's spin speed.
+    readonly property int fanLevel: !isNum(fanRpm) || fanRpm <= 0 ? 0 : (fanRpm < 2500 ? 1 : (fanRpm < 4000 ? 2 : 3))
+    // Graph scale: grows to the highest RPM seen, never below 3000.
+    property real fanPeak: 3000
+    onFanRpmChanged: if (isNum(fanRpm) && Number(fanRpm) > fanPeak) fanPeak = Number(fanRpm)
+    QtObject { id: fanSensor; readonly property var value: root.fanRpm }
+
     // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
     Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount" }
 
@@ -160,6 +252,7 @@ PlasmoidItem {
     History { id: freqHistory; sensor: freqAvg;   wanted: (root.panelGraphs && root.showFreq) || (root.popupGraphs && root.popupFreq) }
     History { id: netDownHistory; sensor: netDown; wanted: (root.panelGraphs && root.showNet) || (root.popupGraphs && root.popupNet) }
     History { id: netUpHistory;   sensor: netUp;   wanted: (root.panelGraphs && root.showNet) || (root.popupGraphs && root.popupNet) }
+    History { id: fanHistory;     sensor: fanSensor; wanted: (root.panelGraphs && root.fanShown) || (root.popupGraphs && root.popupFanShown) }
     History { id: batHistory;     sensor: batSensor; wanted: (root.panelGraphs && root.batShown) || (root.popupGraphs && root.popupBatShown) }
 
     readonly property var cpuHist:  cpuHistory.historySource
@@ -169,6 +262,7 @@ PlasmoidItem {
     readonly property var netDownHist: netDownHistory.historySource
     readonly property var netUpHist: netUpHistory.historySource
     readonly property var batHist: batHistory.historySource
+    readonly property var fanHist: fanHistory.historySource
 
     // One small line graph; used by the popup and (next) the panel.
     component Spark: Charts.LineChart {
@@ -190,6 +284,56 @@ PlasmoidItem {
         interpolate: false
     }
 
+    // A small three-blade fan drawn from rounded rectangles, in the theme's text colour.
+    // The spin only runs while the fan is turning and the icon is visible.
+    component FanIcon: Item {
+        id: fanIcon
+        property int level: 0                  // 0 stopped, 1 slow, 2 medium, 3 fast
+        property color color: Kirigami.Theme.textColor
+        property bool animate: true
+        implicitWidth: Kirigami.Units.iconSizes.smallMedium
+        implicitHeight: implicitWidth
+
+        Item {
+            id: rotor
+            anchors.fill: parent
+            Repeater {
+                model: 3
+                Rectangle {
+                    required property int index
+                    width: fanIcon.width * 0.30
+                    height: fanIcon.height * 0.44
+                    radius: width / 2
+                    color: fanIcon.color
+                    x: (fanIcon.width - width) / 2
+                    y: fanIcon.height * 0.04
+                    transform: Rotation {
+                        origin.x: width / 2
+                        origin.y: fanIcon.height / 2 - y
+                        angle: index * 120 + 20     // the 20 degree offset gives the blades a pitch
+                    }
+                }
+            }
+            Rectangle {
+                anchors.centerIn: parent
+                width: fanIcon.width * 0.20
+                height: width
+                radius: width / 2
+                color: fanIcon.color
+            }
+        }
+
+        // Stepped at ~12 frames per second instead of a smooth 60 fps animation: at this icon
+        // size it still reads as spinning, but it wakes the panel and compositor far less often.
+        // Each step stays under 60 degrees so a three-blade fan never appears to turn backwards.
+        Timer {
+            interval: 80
+            repeat: true
+            running: fanIcon.animate && fanIcon.level > 0 && fanIcon.visible && fanIcon.width > 0
+            onTriggered: rotor.rotation = (rotor.rotation + (fanIcon.level === 1 ? 10 : (fanIcon.level === 2 ? 22 : 40))) % 360
+        }
+    }
+
     // ---- formatting helpers ----
     // Accepts any real numeric value; rejects undefined, null, "" and NaN so a
     // missing sensor shows "--" instead of a fake 0.
@@ -203,6 +347,7 @@ PlasmoidItem {
         return Math.round(useF ? v * 9 / 5 + 32 : v) + unit
     }
     function gib(v)   { return isNum(v) ? (v / 1073741824).toFixed(1) + " GiB" : "-- GiB" }
+    function rpmText(v) { return isNum(v) ? Math.round(Number(v)) + " RPM" : "-- RPM" }
     function wh(v) { return isNum(v) ? Number(v).toFixed(1) + " Wh" : "-- Wh" }
     function batArrow() { return batState > 0 ? " ↑" : (batState < 0 ? " ↓" : "") }
     function batText() { return pct(batPercent) + batArrow() }
@@ -257,6 +402,7 @@ PlasmoidItem {
         if (showFreq) parts.push(freq(freqAvg.value))
         if (showNet)  parts.push(netText())
         if (batShown) parts.push("BAT " + batText())
+        if (fanShown) parts.push(rpmText(fanRpm))
         return parts.join(" · ")
     }
 
@@ -284,6 +430,7 @@ PlasmoidItem {
         TextMetrics { id: freqMetrics; font: Kirigami.Theme.defaultFont; text: "9.9 GHz" }
         TextMetrics { id: netMetrics;  font: Kirigami.Theme.defaultFont; text: "↓999 MB/s ↑999 MB/s" }
         TextMetrics { id: batMetrics;  font: Kirigami.Theme.defaultFont; text: "BAT 100% ↓" }
+        TextMetrics { id: fanMetrics;  font: Kirigami.Theme.defaultFont; text: "9999 RPM" }
 
         // Thin divider spanning the full panel thickness (full height on a
         // horizontal panel, full width on a vertical one).
@@ -304,6 +451,8 @@ PlasmoidItem {
             property string hPrefix: ""             // horizontal layout: "CPU " before the value
             property string valueText
             property string vValueText: ""          // optional different text for vertical panels
+            property bool fan: false                // show the spinning fan icon before the text
+            property int fanLevel: 0
             property real minLabelWidth: 0
             property color textColor: Kirigami.Theme.textColor
             property var history: null
@@ -333,10 +482,17 @@ PlasmoidItem {
             GridLayout {
                 id: content
                 anchors.fill: parent
-                columns: compact.vertical ? 1 : 2
+                columns: compact.vertical ? 1 : (cell.fan ? 3 : 2)
                 columnSpacing: Kirigami.Units.smallSpacing
                 rowSpacing: 0
 
+                FanIcon {
+                    visible: cell.fan
+                    Layout.alignment: Qt.AlignCenter
+                    level: cell.fanLevel
+                    animate: root.fanAnimate
+                    color: cell.textColor
+                }
                 PlasmaComponents.Label {
                     Layout.alignment: Qt.AlignCenter
                     Layout.minimumWidth: compact.vertical ? 0 : cell.minLabelWidth
@@ -367,7 +523,7 @@ PlasmoidItem {
         GridLayout {
             id: layout
             anchors.fill: parent
-            columns: compact.vertical ? 1 : 11
+            columns: compact.vertical ? 1 : 13
             columnSpacing: Kirigami.Units.largeSpacing
             rowSpacing: Kirigami.Units.smallSpacing
 
@@ -449,8 +605,23 @@ PlasmoidItem {
                 history: root.batHist
                 lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
             }
+            Divider { visible: root.fanShown && (root.showCpu || root.showRam || root.showTemp || root.showFreq || root.showNet || root.batShown) }
+            MetricCell {
+                visible: root.fanShown
+                Layout.alignment: Qt.AlignCenter
+                Layout.fillWidth: compact.vertical
+                Layout.fillHeight: !compact.vertical
+                caption: "Fan"
+                valueText: root.rpmText(root.fanRpm)
+                vValueText: root.isNum(root.fanRpm) ? String(Math.round(Number(root.fanRpm))) : "--"
+                minLabelWidth: fanMetrics.width
+                fan: true
+                fanLevel: root.fanLevel
+                history: root.fanHist
+                yTo: root.fanPeak
+            }
             PlasmaComponents.Label {
-                visible: !root.showCpu && !root.showRam && !root.showTemp && !root.showFreq && !root.showNet && !root.batShown
+                visible: !root.showCpu && !root.showRam && !root.showTemp && !root.showFreq && !root.showNet && !root.batShown && !root.fanShown
                 Layout.alignment: Qt.AlignCenter
                 text: "–"
             }
@@ -571,6 +742,26 @@ PlasmoidItem {
             lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
         }
 
+        PlasmaComponents.Label { visible: root.popupFanShown; text: "Fan" }
+        RowLayout {
+            visible: root.popupFanShown
+            spacing: Kirigami.Units.smallSpacing
+            FanIcon {
+                level: root.fanLevel
+                animate: root.fanAnimate
+            }
+            PlasmaComponents.Label { text: root.rpmText(root.fanRpm); font.bold: true }
+        }
+
+        Spark {
+            visible: root.popupGraphs && root.popupFanShown && root.fanHist !== null
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
+            history: (root.popupGraphs && root.popupFanShown) ? root.fanHist : null
+            yTo: root.fanPeak
+        }
+
         PlasmaComponents.Label { visible: root.popupTempAvg; text: "CPU temp (avg)" }
         PlasmaComponents.Label {
             visible: root.popupTempAvg
@@ -649,7 +840,7 @@ PlasmoidItem {
         PlasmaComponents.Label {
             visible: !root.popupCpu && !root.popupMemory && !root.popupTempAvg
                      && !root.popupTempMax && !root.popupCores && !root.popupFreq && !root.popupNet
-                     && !root.popupBatShown
+                     && !root.popupBatShown && !root.popupFanShown
             Layout.columnSpan: 2
             text: "Nothing to show. Enable items under Configure > Metrics."
             opacity: 0.7

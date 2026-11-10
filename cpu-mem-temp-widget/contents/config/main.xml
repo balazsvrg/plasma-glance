@@ -36,6 +36,18 @@
             <label>Number of batteries found (written by the widget, read by the settings pages)</label>
             <default>0</default>
         </entry>
+        <entry name="showFan" type="Bool">
+            <label>Show fan speed</label>
+            <default>false</default>
+        </entry>
+        <entry name="fanAnimate" type="Bool">
+            <label>Animate the fan icon</label>
+            <default>true</default>
+        </entry>
+        <entry name="fanCount" type="Int">
+            <label>Number of fans found (written by the widget, read by the settings pages)</label>
+            <default>0</default>
+        </entry>
         <entry name="useFahrenheit" type="Bool">
             <label>Show temperature in Fahrenheit</label>
             <default>false</default>
@@ -84,6 +96,10 @@
         </entry>
         <entry name="batSeparate" type="Bool">
             <label>Popup: list each battery separately (only with several batteries)</label>
+            <default>false</default>
+        </entry>
+        <entry name="popupFan" type="Bool">
+            <label>Popup: show fan speed</label>
             <default>false</default>
         </entry>
         <entry name="popupCores" type="Bool">
