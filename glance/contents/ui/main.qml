@@ -135,6 +135,7 @@ PlasmoidItem {
         id: fanDisc
         signal found(var ids, bool final)         // final: stop looking (found some, or gave up)
         property int attempts: 0
+        property string lastKey: ""             // the previous non-empty scan
         readonly property int maxAttempts: 10     // about 30 s: the sensor tree can fill in slowly at login
 
         Sensors.SensorTreeModel { id: fanTree }
@@ -157,9 +158,15 @@ PlasmoidItem {
             }
             ids.sort()
             ++attempts
-            if (ids.length > 0 || attempts >= maxAttempts) {
+            // Final only when two consecutive scans agree on a non-empty list (a second chip may
+            // appear after the first), or when the attempts run out.
+            var key = ids.join(",")
+            var stable = ids.length > 0 && key === lastKey
+            lastKey = ids.length > 0 ? key : ""
+            if (stable || attempts >= maxAttempts) {
                 found(ids, true)
             } else {
+                if (ids.length > 0) found(ids, false) // show what is known now, keep looking
                 fanScan.interval = 3000               // an empty tree may just be slow: look again
                 fanScan.restart()
             }
