@@ -626,7 +626,6 @@ PlasmoidItem {
     function bytesText(v) { return M.FORMATS.bytes(v) }
     function ghzNumber(v) { return M.FORMATS.ghz(v) }
     function freq(v) { return M.FORMATS.freq(v) }
-    function rpmText(v) { return M.render(M.byId("fan").popup.rows[0].value, { value: v }, textCtx) }
     // The popup's battery row: the percentage, the state arrow and the energy of all batteries.
     function batRowText() {
         return M.render(M.byId("bat").popup.rows[0].value, { percent: batPercent, state: batState, energy: batEnergyTotal() }, textCtx)
@@ -1304,9 +1303,21 @@ PlasmoidItem {
         property string name
         property string value
         property color valueColor: Kirigami.Theme.textColor
+        property bool fanIcon: false                        // the spinning fan icon before the value
         spacing: Kirigami.Units.largeSpacing
         PlasmaComponents.Label { text: popupRow.name; Layout.preferredWidth: root.popupLabelWidth }
-        PlasmaComponents.Label { text: popupRow.value; font.bold: true; color: popupRow.valueColor }
+        RowLayout {
+            spacing: Kirigami.Units.smallSpacing
+            Loader {
+                active: popupRow.fanIcon
+                visible: active
+                sourceComponent: FanIcon {
+                    level: root.fanLevel
+                    animate: root.fanAnimate
+                }
+            }
+            PlasmaComponents.Label { text: popupRow.value; font.bold: true; color: popupRow.valueColor }
+        }
     }
     // A graph under a stat's rows. Its data, scale and colours come from the same helpers the panel uses.
     component PopupGraph: Spark {
@@ -1324,52 +1335,61 @@ PlasmoidItem {
         lineColor: root.statLineColor(statId)
     }
 
-    function popupBlock(id) {
-        switch (id) {
-        case "cpu":  return cpuBlock
-        case "ram":  return ramBlock
-        case "temp": return tempBlock
-        case "freq": return freqBlock
-        case "net":  return netBlock
-        case "bat":  return batBlock
-        case "fan":  return fanBlock
-        }
-        return null
+    // The values a popup row reads: every sensor of a plain stat (popup-only ones included), the live values of
+    // the others. Read inside the calling binding, so QML re-evaluates it.
+    function popupVals(id) {
+        var m = M.byId(id)
+        if (m.source) return statVals(id)
+        var vals = {}
+        for (var name in m.sensors) vals[name] = sensorValue(id, name)
+        return vals
+    }
+    // The inputs of M.popupRowShown / M.popupGraphShown for a stat.
+    function popupFlags(id) {
+        var f = sensorFlags(id)
+        f.available = { hasBattery: hasBattery, hasFan: hasFan }
+        return f
+    }
+    function popupRowColor(id, row) {
+        if (row.alert === "panel") return statTextColor(id)
+        if (typeof row.alert === "function")
+            return row.alert(popupVals(id), limitCtx) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+        return Kirigami.Theme.textColor
     }
 
+    // The block of a stat made only of registry rows and a graph (every stat but temperature and battery so far).
+    // Its stat id comes from the Loader that holds it.
     Component {
-        id: cpuBlock
+        id: statBlock
         ColumnLayout {
-            PopupRow { name: "CPU usage"; value: root.pct(sensorValue("cpu", "value")) }
-            PopupGraph { statId: "cpu" }
-        }
-    }
-    Component {
-        id: ramBlock
-        ColumnLayout {
-            PopupRow {
-                name: "Memory"
-                value: root.gib(sensorValue("ram", "used")) + " / " + root.gib(sensorValue("ram", "total")) + " (" + root.pct(sensorValue("ram", "value")) + ")"
+            id: blk
+            readonly property string statId: parent && parent.blockStatId ? parent.blockStatId : ""
+            Repeater {
+                model: blk.statId ? M.byId(blk.statId).popup.rows : []
+                delegate: PopupRow {
+                    required property var modelData
+                    visible: M.popupRowShown(modelData, root.popupFlags(blk.statId))
+                    name: modelData.label
+                    value: M.render(modelData.value, root.popupVals(blk.statId), root.textCtx)
+                    valueColor: root.popupRowColor(blk.statId, modelData)
+                    fanIcon: modelData.decoration === "fanIcon"
+                }
             }
-            PopupGraph { statId: "ram" }
+            PopupGraph {
+                statId: blk.statId
+                wanted: blk.statId !== "" && M.popupGraphShown(M.byId(blk.statId), root.popupFlags(blk.statId))
+            }
         }
     }
-    Component {
-        id: freqBlock
-        ColumnLayout {
-            PopupRow { name: "CPU frequency"; value: root.freq(sensorValue("freq", "value")) }
-            PopupRow { name: "Min / max"; value: root.ghzNumber(sensorValue("freq", "min")) + " / " + root.ghzNumber(sensorValue("freq", "max")) + " GHz" }
-            PopupGraph { statId: "freq" }
+
+    function popupBlock(id) {
+        switch (id) {
+        case "temp": return tempBlock
+        case "bat":  return batBlock
         }
+        return M.byId(id) ? statBlock : null
     }
-    Component {
-        id: netBlock
-        ColumnLayout {
-            PopupRow { name: "Download"; value: root.rate(sensorValue("net", "down")) + "  (" + root.bytesText(sensorValue("net", "downTotal")) + " total)" }
-            PopupRow { name: "Upload"; value: root.rate(sensorValue("net", "up")) + "  (" + root.bytesText(sensorValue("net", "upTotal")) + " total)" }
-            PopupGraph { statId: "net" }
-        }
-    }
+
     Component {
         id: batBlock
         ColumnLayout {
@@ -1397,24 +1417,6 @@ PlasmoidItem {
                 value: root.batTimeText() !== "" ? root.batTimeText() + (root.batState > 0 ? " to full" : " left") : "estimating…"
             }
             PopupGraph { statId: "bat" }
-        }
-    }
-    Component {
-        id: fanBlock
-        ColumnLayout {
-            RowLayout {
-                spacing: Kirigami.Units.largeSpacing
-                PlasmaComponents.Label { text: "Fan"; Layout.preferredWidth: root.popupLabelWidth }
-                RowLayout {
-                    spacing: Kirigami.Units.smallSpacing
-                    FanIcon {
-                        level: root.fanLevel
-                        animate: root.fanAnimate
-                    }
-                    PlasmaComponents.Label { text: root.rpmText(root.fanRpm); font.bold: true }
-                }
-            }
-            PopupGraph { statId: "fan" }
         }
     }
     Component {
@@ -1489,6 +1491,7 @@ PlasmoidItem {
             delegate: Loader {
                 required property string modelData
                 Layout.fillWidth: true
+                readonly property string blockStatId: modelData
                 active: root.popupShown(modelData)
                 visible: active
                 sourceComponent: root.popupBlock(modelData)

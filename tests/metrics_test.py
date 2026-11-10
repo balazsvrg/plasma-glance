@@ -587,6 +587,23 @@ equal("every row's flag is the popup flag or one of the stat's options", run(M, 
 equal("the widest popup label is the one the name column is sized from", run(M, "popupLabels(METRICS).sort(function(a,b){return b.length-a.length})[0]"), "CPU temp (max core)")
 check("every popup row alert is 'panel' or a function", run(M, "METRICS.every(function(m){return m.popup.rows.every(function(r){return r.alert===undefined||r.alert==='panel'||typeof r.alert==='function'})})"))
 
+# ---- generic popup block (P4 step 2) ----
+for blk in ("cpuBlock", "ramBlock", "freqBlock", "netBlock", "fanBlock"):
+    check("main.qml has no %s" % blk, "id: " + blk not in MAIN_QML)
+check("the stat block renders the registry's rows", "model: blk.statId ? M.byId(blk.statId).popup.rows : []" in MAIN_QML
+      and "M.render(modelData.value, root.popupVals(blk.statId), root.textCtx)" in MAIN_QML)
+check("the stat block's rows and graph use the registry's flags", "M.popupRowShown(modelData, root.popupFlags(blk.statId))" in MAIN_QML
+      and "M.popupGraphShown(M.byId(blk.statId), root.popupFlags(blk.statId))" in MAIN_QML)
+check("the loader hands its stat id to the block", "readonly property string blockStatId: modelData" in MAIN_QML)
+equal("popupBlock keeps only temp and bat hand-written", sorted(re.findall(r'case "(\w+)":\s+return (\w+)Block', MAIN_QML)), [("bat", "bat"), ("temp", "temp")])
+check("the fan icon comes from the registry's row decoration", 'fanIcon: modelData.decoration === "fanIcon"' in MAIN_QML)
+check("popup values come from the sensors (all of them) or the live values", "if (m.source) return statVals(id)" in MAIN_QML
+      and "for (var name in m.sensors) vals[name] = sensorValue(id, name)" in MAIN_QML)
+equal("popup rows render the v0.9.2 text", run(M, "(function(){var v={cpu:{value:12.4},ram:{value:47.6,used:8e9,total:16e9},freq:{value:2750,min:800,max:4500},"
+      "net:{down:123456,up:7890,downTotal:5e9,upTotal:1e9},fan:{value:2400}},c={useF:false,netBits:false};"
+      "return ['cpu','ram','freq','net','fan'].map(function(i){return byId(i).popup.rows.map(function(r){return render(r.value,v[i],c)})})})()"),
+      [["12%"], ["7.5 GiB / 14.9 GiB (48%)"], ["2.8 GHz", "0.8 / 4.5 GHz"], ["123 KB/s  (5.0 GB total)", "7.9 KB/s  (1.0 GB total)"], ["2400 RPM"]])
+
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))
 if failures:
