@@ -10,11 +10,14 @@ SRC="glance"
 read -r ID VERSION < <(python3 -c "import json; k = json.load(open('$SRC/metadata.json'))['KPlugin']; print(k['Id'], k['Version'])")
 OUT="dist/$ID-$VERSION.plasmoid"
 
-command -v zip >/dev/null || { echo "zip not found" >&2; exit 1; }
+for tool in zip unzip du; do
+    command -v "$tool" >/dev/null || { echo "$tool not found" >&2; exit 1; }
+done
 
 mkdir -p dist
 rm -f "$OUT"
-# -X: no extra file attributes, so the archive is reproducible; -r: recurse.
+# -X: leave out extra file attributes (uid/gid, extended timestamps); file mtimes are still stored, so
+# the archive is not byte-for-byte reproducible. -r: recurse. It zips the working tree, not a git commit.
 (cd "$SRC" && zip -q -X -r "../$OUT" metadata.json contents)
 
 echo "Built $OUT ($(du -h "$OUT" | cut -f1))"

@@ -38,6 +38,8 @@ CPU 4%  |  RAM 30%  |  35°C  |  ↓12 KB/s ↑3 KB/s  |  BAT 62% ↑
   | Battery | `org.kde.plasma.plasma5support` (power-management engine) | `plasma5support` |
   | Settings pages | `org.kde.kirigami`, `org.kde.kcmutils` | `kf6-kirigami`, `kf6-kcmutils` |
 
+- `python3` (the install, uninstall and package scripts read `metadata.json` with it), and `zip`, `unzip` and
+  `du` (only `./package.sh` needs these).
 - Hardware, all optional: a CPU temperature sensor that KDE System Monitor can read, a fan sensor
   (from lm_sensors), and a battery. A stat the machine cannot supply simply shows `--` or, for battery
   and fan, does not appear in the settings at all.
@@ -169,8 +171,8 @@ The icon stands still at 0 RPM and spins faster, and looks faster, as the fan do
 | Fan speed | Icon |
 |---|---|
 | under 2500 RPM | plain blades, slow spin |
-| 2500 to 4000 RPM | medium spin with a faint motion-blur trail |
-| over 4000 RPM | fast spin, two blur trails, a soft blurred disc, a small shake and swirling speed lines |
+| 2500 to under 4000 RPM | medium spin with a faint motion-blur trail |
+| 4000 RPM and over | fast spin, two blur trails, a soft blurred disc, a small shake and swirling speed lines |
 
 The animation is stepped at about 12 frames per second to keep it cheap. Turn it off with
 *Animate fan icon based on fan speed* in the Metrics tab; the icon then stays a plain still fan.
@@ -253,12 +255,14 @@ Graphs use KDE Quick Charts (`org.kde.quickcharts`: `LineChart`, `HistoryProxySo
 glance/
   metadata.json                 widget id, name, API version
   contents/config/main.xml      settings schema and defaults
-  contents/config/config.qml    registers the settings page
+  contents/config/config.qml    registers the settings pages
   contents/ui/main.qml          panel view, popup, sensors
   contents/ui/configGeneral.qml settings tab: General
   contents/ui/configMetrics.qml settings tab: Metrics
   contents/ui/configGraphs.qml  settings tab: Graphs
+  contents/ui/LengthNotice.qml  settings notice about the maximum length
 install.sh / uninstall.sh
+package.sh                      builds the .plasmoid into dist/
 ```
 
 ## Changelog
