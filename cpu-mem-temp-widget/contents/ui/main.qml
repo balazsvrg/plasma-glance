@@ -285,41 +285,111 @@ PlasmoidItem {
     }
 
     // A small three-blade fan drawn from rounded rectangles, in the theme's text colour.
+    // It looks faster as the fan does (all effects are shown only while animating):
+    //   level 1 (slow)   plain blades
+    //   level 2 (medium) one faint motion-blur trail behind each blade
+    //   level 3 (fast)   two trails, a soft blurred disc, a small shake and swirling speed lines
     // The spin only runs while the fan is turning and the icon is visible.
     component FanIcon: Item {
         id: fanIcon
         property int level: 0                  // 0 stopped, 1 slow, 2 medium, 3 fast
         property color color: Kirigami.Theme.textColor
         property bool animate: true
+        property int frame: 0                  // counts animation steps (drives the shake)
         implicitWidth: Kirigami.Units.iconSizes.smallMedium
         implicitHeight: implicitWidth
 
+        readonly property bool fx: animate && level > 0        // effects only while animating
+        readonly property int trails: !fx ? 0 : (level >= 3 ? 2 : (level === 2 ? 1 : 0))
+        readonly property real shake: (fx && level >= 3) ? width * 0.05 : 0
+
         Item {
-            id: rotor
-            anchors.fill: parent
-            Repeater {
-                model: 3
+            id: shaker
+            width: fanIcon.width
+            height: fanIcon.height
+            x: fanIcon.frame % 2 === 0 ? -fanIcon.shake : fanIcon.shake
+            y: fanIcon.frame % 2 === 0 ? fanIcon.shake * 0.6 : -fanIcon.shake * 0.6
+
+            Item {
+                id: rotor
+                anchors.fill: parent
+                scale: (fanIcon.fx && fanIcon.level >= 3) ? 0.8 : 1      // leaves room for the speed lines
+
+                // Soft blurred disc: the blades smear into a circle at top speed.
                 Rectangle {
-                    required property int index
-                    width: fanIcon.width * 0.30
-                    height: fanIcon.height * 0.44
+                    visible: fanIcon.fx && fanIcon.level >= 3
+                    anchors.centerIn: parent
+                    width: parent.width * 0.94
+                    height: width
                     radius: width / 2
                     color: fanIcon.color
-                    x: (fanIcon.width - width) / 2
-                    y: fanIcon.height * 0.04
-                    transform: Rotation {
-                        origin.x: width / 2
-                        origin.y: fanIcon.height / 2 - y
-                        angle: index * 120 + 20     // the 20 degree offset gives the blades a pitch
+                    opacity: 0.12
+                }
+
+                // Layer 0 is the real blades; layers 1 and 2 are fading trails behind them.
+                Repeater {
+                    model: 3
+                    Item {
+                        id: layer
+                        required property int index
+                        anchors.fill: parent
+                        visible: index <= fanIcon.trails
+                        rotation: -index * 15
+                        opacity: index === 0 ? 1 : (index === 1 ? 0.38 : 0.2)
+                        z: -index
+
+                        Repeater {
+                            model: 3
+                            Rectangle {
+                                required property int index
+                                width: fanIcon.width * 0.30
+                                height: fanIcon.height * 0.44
+                                radius: width / 2
+                                color: fanIcon.color
+                                x: (fanIcon.width - width) / 2
+                                y: fanIcon.height * 0.04
+                                transform: Rotation {
+                                    origin.x: width / 2
+                                    origin.y: fanIcon.height / 2 - y
+                                    angle: index * 120 + 20     // the 20 degree offset gives the blades a pitch
+                                }
+                            }
+                        }
                     }
                 }
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: fanIcon.width * 0.20
+                    height: width
+                    radius: width / 2
+                    color: fanIcon.color
+                }
             }
-            Rectangle {
-                anchors.centerIn: parent
-                width: fanIcon.width * 0.20
-                height: width
-                radius: width / 2
-                color: fanIcon.color
+
+            // Cartoon speed lines: short dashes along the rim that swirl with the fan.
+            Item {
+                anchors.fill: parent
+                visible: fanIcon.fx && fanIcon.level >= 3
+                rotation: rotor.rotation * 0.5
+                Repeater {
+                    model: 3
+                    Rectangle {
+                        required property int index
+                        width: fanIcon.width * 0.22
+                        height: Math.max(1, fanIcon.width * 0.07)
+                        radius: height / 2
+                        color: fanIcon.color
+                        opacity: 0.75
+                        x: (fanIcon.width - width) / 2
+                        y: 0
+                        transform: Rotation {
+                            origin.x: width / 2
+                            origin.y: fanIcon.height / 2 - y
+                            angle: index * 120 + 60
+                        }
+                    }
+                }
             }
         }
 
@@ -330,7 +400,10 @@ PlasmoidItem {
             interval: 80
             repeat: true
             running: fanIcon.animate && fanIcon.level > 0 && fanIcon.visible && fanIcon.width > 0
-            onTriggered: rotor.rotation = (rotor.rotation + (fanIcon.level === 1 ? 10 : (fanIcon.level === 2 ? 22 : 40))) % 360
+            onTriggered: {
+                rotor.rotation = (rotor.rotation + (fanIcon.level === 1 ? 10 : (fanIcon.level === 2 ? 22 : 40))) % 360
+                fanIcon.frame = (fanIcon.frame + 1) % 1000
+            }
         }
     }
 

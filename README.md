@@ -61,11 +61,19 @@ Right-click the widget in the panel and choose **Configure…**. There are three
 
 Turning off per-core temperatures also stops its sensors.
 
-**Fan speed** shows the RPM of the fastest fan next to a small three-blade fan icon that spins
-at one of three speeds (under 2500 RPM, 2500 to 4000, over 4000) and stands still at 0 RPM. The
-animation is stepped at about 12 frames per second to keep it cheap, and can be turned off with
-*Animate the fan icon* in the Metrics tab. Fans are discovered from the sensor tree
-(`lmsensors/<chip>/fanN`), so no hardware names are hard-coded.
+**Fan speed** shows the RPM of the fastest fan next to a small three-blade fan icon, drawn in QML.
+The icon stands still at 0 RPM and spins faster, and looks faster, as the fan does:
+
+| Fan speed | Icon |
+|---|---|
+| under 2500 RPM | plain blades, slow spin |
+| 2500 to 4000 RPM | medium spin with a faint motion-blur trail |
+| over 4000 RPM | fast spin, two blur trails, a soft blurred disc, a small shake and swirling speed lines |
+
+The animation is stepped at about 12 frames per second to keep it cheap. Turn it off with
+*Animate fan icon based on fan speed* in the Metrics tab; the icon then stays a plain still fan.
+Fans are discovered from the sensor tree (`lmsensors/<chip>/fanN`), so no hardware names are
+hard-coded.
 
 On a laptop with **several batteries**, the Metrics tab also offers *Popup battery view*:
 **Combined** (default) or **Each battery separately**. The panel always shows the combined

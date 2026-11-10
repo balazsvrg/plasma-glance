@@ -102,7 +102,7 @@ KCM.SimpleKCM {
             visible: page.cfg_fanCount > 0
             Layout.columnSpan: 3
             Layout.leftMargin: Kirigami.Units.gridUnit
-            text: i18n("Animate the fan icon (slow, medium or fast spin with the real fan speed)")
+            text: i18n("Animate fan icon based on fan speed")
         }
 
         // Only offered when there are several batteries to separate.
