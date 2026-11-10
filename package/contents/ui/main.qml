@@ -55,21 +55,12 @@ PlasmoidItem {
         var p = peaks[id]
         return p === undefined ? M.byId(id).scale.floor : p
     }
-    // What the scale of a stat watches (registry: scale.observe.keys), read live from its sensors.
-    function scaleVals(id) {
-        switch (id) {
-        case "freq": return { max: freqMax.value }
-        case "net":  return { down: netDown.value, up: netUp.value }
-        case "fan":  return { value: fanRpm }
-        }
-        return {}
-    }
     // One step of a stat's peak. The time that passed since the last step is the refresh interval (the triggers
     // run once per sensor update), so the decay of the network scale is about 1% per second whatever the rate.
     function stepPeak(id) {
         var prev = peakOf(id)
         var ctx = { barChart: barChart, graphOn: statGraph(id) || statPopupGraph(id) }
-        var next = M.stepPeak(M.byId(id), prev, scaleVals(id), ctx, refreshMs)
+        var next = M.stepPeak(M.byId(id), prev, statVals(id), ctx, refreshMs)
         if (next === prev) return
         var map = {}
         for (var k in peaks) map[k] = peaks[k]
@@ -78,35 +69,58 @@ PlasmoidItem {
     }
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
-    // A sensor is switched off when nothing shows its stat, so nothing polls for data nobody sees.
-    Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs; enabled: root.showCpu || root.popupCpu }
-    Sensors.Sensor { id: memPercent; sensorId: "memory/physical/usedPercent";  updateRateLimit: root.refreshMs; enabled: root.showRam || root.popupMemory }
-    Sensors.Sensor { id: memUsed;    sensorId: "memory/physical/used";         updateRateLimit: root.refreshMs; enabled: root.popupMemory && root.expanded }
-    Sensors.Sensor { id: memTotal;   sensorId: "memory/physical/total";        updateRateLimit: root.refreshMs; enabled: root.popupMemory && root.expanded }
-    Sensors.Sensor { id: tempAvg;    sensorId: "cpu/all/averageTemperature";   updateRateLimit: root.refreshMs; enabled: root.showTemp || root.popupTempAvg }
-    Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs; enabled: root.popupTempMax && root.expanded }
-    Sensors.Sensor { id: freqAvg;    sensorId: "cpu/all/averageFrequency";     updateRateLimit: root.refreshMs; enabled: root.showFreq || root.popupFreq }
-    Sensors.Sensor { id: freqMin;    sensorId: "cpu/all/minimumFrequency";     updateRateLimit: root.refreshMs; enabled: root.popupFreq && root.expanded }
-    Sensors.Sensor {
-        id: freqMax
-        sensorId: "cpu/all/maximumFrequency"
-        updateRateLimit: root.refreshMs
-        enabled: root.showFreq || root.popupFreq
-        // The hardware maximum is not a sensor, so the frequency graph's scale
-        // grows to the highest value seen (never below 1 GHz).
-        onValueChanged: root.stepPeak("freq")
+    // One Sensor per `sensors` entry of the registry (Metrics.js: sensor id, and the gate that says when it is
+    // polled), so nothing polls for data nobody sees. `sensorItems` maps "<stat id>.<name>" to the created item and
+    // is a property, so a lookup made before the items existed is made again once they do (as reserveItems).
+    readonly property var sensorKinds: M.sensorKinds()
+    property var sensorItems: ({})
+    // A value that arrives while its sensor is still being created reaches onValueChanged before the item is in
+    // sensorItems (the step would read nothing), so once every sensor exists each trigger sensor that already has a
+    // number steps its peak once.
+    function stepTriggerPeaks() {
+        for (var i = 0; i < M.METRICS.length; ++i) {
+            var t = M.METRICS[i].scale.trigger
+            if (t && isNum(sensorValue(M.METRICS[i].id, t))) stepPeak(M.METRICS[i].id)
+        }
     }
-    // Network, all interfaces combined (bytes per second; totals in bytes since boot).
-    Sensors.Sensor {
-        id: netDown
-        sensorId: "network/all/download"
-        updateRateLimit: root.refreshMs
-        enabled: root.showNet || root.popupNet
-        onValueChanged: root.stepPeak("net")         // once per refresh (upload updates in the same tick)
+    function sensorOf(id, name) { return sensorItems[id + "." + name] || null }
+    function sensorValue(id, name) {
+        var s = sensorOf(id, name)
+        return s ? s.value : undefined
     }
-    Sensors.Sensor { id: netUp; sensorId: "network/all/upload"; updateRateLimit: root.refreshMs; enabled: root.showNet || root.popupNet }
-    Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
-    Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
+    // The inputs of M.sensorActive for a stat, read live from the settings (Plasmoid.configuration[key] is reactive).
+    function sensorFlags(id) {
+        var k = M.byId(id).keys, c = Plasmoid.configuration, opts = {}
+        for (var o in k.options) opts[o] = !!c[k.options[o]]
+        return { show: !!c[k.show], popup: !!c[k.popup], expanded: root.expanded, opts: opts }
+    }
+    Instantiator {
+        id: sensorInst
+        model: root.sensorKinds
+        delegate: Sensors.Sensor {
+            required property var modelData
+            readonly property var entry: M.byId(modelData.id).sensors[modelData.name]
+            readonly property string key: modelData.id + "." + modelData.name
+            sensorId: entry.id
+            updateRateLimit: root.refreshMs
+            enabled: M.sensorActive(entry, root.sensorFlags(modelData.id))
+            // The sensor a following scale names as its trigger steps the peak once per refresh (the hardware
+            // maximum is not a sensor, so a graph's scale grows to the highest value seen).
+            onValueChanged: if (M.byId(modelData.id).scale.trigger === modelData.name) root.stepPeak(modelData.id)
+        }
+        onObjectAdded: {
+            root.sensorItems = sensorMap()
+            if (count === root.sensorKinds.length) root.stepTriggerPeaks()
+        }
+        function sensorMap() {
+            var map = {}
+            for (var i = 0; i < count; ++i) {
+                var it = objectAt(i)
+                if (it) map[it.key] = it
+            }
+            return map
+        }
+    }
     // ---- battery ----
     // Data comes from Plasma's power-management engine, the same source KDE's own
     // battery widget uses. (KDE's ksystemstats power sensors lag and disagree with
@@ -253,9 +267,6 @@ PlasmoidItem {
     onFanRpmChanged: root.stepPeak("fan")
     QtObject { id: fanSensor; readonly property var value: root.fanRpm }
 
-    // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
-    Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount"; enabled: root.popupCores && root.expanded }
-
     // ---- graph history ----
     // Each stat has its own history. It is collected only while a graph that
     // shows that stat is enabled, and it starts once the stat's sensor has
@@ -277,7 +288,7 @@ PlasmoidItem {
         property bool ready: false          // latched once the sensor has reported a number
         readonly property var historySource: item ? item.history : null
         readonly property var sampleStore: item ? item.store : null
-        readonly property bool numeric: root.isNum(sensor.value)
+        readonly property bool numeric: !!sensor && root.isNum(sensor.value)
 
         onNumericChanged: if (numeric) ready = true
         Component.onCompleted: if (numeric) ready = true
@@ -287,7 +298,7 @@ PlasmoidItem {
             readonly property var history: h
             Charts.HistoryProxySource {
                 id: h
-                source: Charts.SingleValueSource { value: hist.sensor.value }
+                source: Charts.SingleValueSource { value: hist.sensor ? hist.sensor.value : undefined }
                 maximumHistory: root.historyLen
                 interval: root.refreshMs
                 fillMode: Charts.HistoryProxySource.DoNotFill
@@ -310,7 +321,7 @@ PlasmoidItem {
             }
             Connections {
                 target: h
-                function onDataChanged() { if (root.isNum(hist.sensor.value)) samples.add(Number(hist.sensor.value)) }
+                function onDataChanged() { if (hist.numeric) samples.add(Number(hist.sensor.value)) }
             }
         }
     }
@@ -328,11 +339,13 @@ PlasmoidItem {
                 list.push({ id: M.METRICS[i].id, series: M.METRICS[i].series[j] })
         return list
     }
-    // Where each series' values come from: "<id>.<series>" -> an object with a `value` (the sensor items).
-    readonly property var historySensors: ({
-        "cpu.value": cpuUsage, "ram.value": memPercent, "temp.value": tempAvg, "freq.value": freqAvg,
-        "net.down": netDown, "net.up": netUp, "bat.percent": batSensor, "fan.value": fanSensor
-    })
+    // Where a series' values come from: an object with a `value`. A plain-sensor stat's series is the sensor of the
+    // same name (registry: series keys are sensor names); battery and fan wrap their value in a small QtObject.
+    function historySensor(id, series) {
+        if (id === "bat") return batSensor
+        if (id === "fan") return fanSensor
+        return sensorOf(id, series)
+    }
     Repeater {
         id: historyRepeater
         model: root.historyKinds
@@ -340,7 +353,7 @@ PlasmoidItem {
             required property var modelData
             statId: modelData.id
             series: modelData.series
-            sensor: root.historySensors[modelData.id + "." + modelData.series]
+            sensor: root.historySensor(modelData.id, modelData.series)
             wanted: root.historyWanted(modelData.id)
         }
         onItemAdded: root.historyItems = historyList()
@@ -633,7 +646,7 @@ PlasmoidItem {
     readonly property var limitCtx: ({ warnTempC: warnTempC })
     // The popup's "max core" temperature is highlighted by its own value (the registry's row alert), so the
     // colour always matches the number shown next to it.
-    readonly property bool tempHot: M.byId("temp").popup.rows[1].alert({ max: tempMax.value }, limitCtx)
+    readonly property bool tempHot: M.byId("temp").popup.rows[1].alert({ max: sensorValue("temp", "max") }, limitCtx)
 
     // Every shown stat, in the user's order, as the panel writes it (also the ones hidden by the maximum length).
     function tooltipText() {
@@ -809,15 +822,17 @@ PlasmoidItem {
     // The values a stat's templates read, live (keys as in the registry's templates).
     function statVals(id) {
         switch (id) {
-        case "cpu":  return { value: cpuUsage.value }
-        case "ram":  return { value: memPercent.value }
-        case "temp": return { value: tempAvg.value }
-        case "freq": return { value: freqAvg.value }
-        case "net":  return { down: netDown.value, up: netUp.value }
         case "bat":  return { percent: batPercent, state: batState }
         case "fan":  return { value: fanRpm }
         }
-        return {}
+        return sensorVals(id)
+    }
+    // Every value of a plain-sensor stat under the registry's sensor names (a sensor that is switched off reports
+    // undefined, and a template only reads the keys it names).
+    function sensorVals(id) {
+        var vals = {}
+        for (var name in M.byId(id).sensors) vals[name] = sensorValue(id, name)
+        return vals
     }
     // The text of a stat in the panel, for the current step (compact or full) and orientation, from the
     // registry's templates. On a vertical panel the caption line is always kept, so it is easy to tell
@@ -1319,7 +1334,7 @@ PlasmoidItem {
     Component {
         id: cpuBlock
         ColumnLayout {
-            PopupRow { name: "CPU usage"; value: root.pct(cpuUsage.value) }
+            PopupRow { name: "CPU usage"; value: root.pct(sensorValue("cpu", "value")) }
             PopupGraph { statId: "cpu" }
         }
     }
@@ -1328,7 +1343,7 @@ PlasmoidItem {
         ColumnLayout {
             PopupRow {
                 name: "Memory"
-                value: root.gib(memUsed.value) + " / " + root.gib(memTotal.value) + " (" + root.pct(memPercent.value) + ")"
+                value: root.gib(sensorValue("ram", "used")) + " / " + root.gib(sensorValue("ram", "total")) + " (" + root.pct(sensorValue("ram", "value")) + ")"
             }
             PopupGraph { statId: "ram" }
         }
@@ -1336,16 +1351,16 @@ PlasmoidItem {
     Component {
         id: freqBlock
         ColumnLayout {
-            PopupRow { name: "CPU frequency"; value: root.freq(freqAvg.value) }
-            PopupRow { name: "Min / max"; value: root.ghzNumber(freqMin.value) + " / " + root.ghzNumber(freqMax.value) + " GHz" }
+            PopupRow { name: "CPU frequency"; value: root.freq(sensorValue("freq", "value")) }
+            PopupRow { name: "Min / max"; value: root.ghzNumber(sensorValue("freq", "min")) + " / " + root.ghzNumber(sensorValue("freq", "max")) + " GHz" }
             PopupGraph { statId: "freq" }
         }
     }
     Component {
         id: netBlock
         ColumnLayout {
-            PopupRow { name: "Download"; value: root.rate(netDown.value) + "  (" + root.bytesText(netDownTotal.value) + " total)" }
-            PopupRow { name: "Upload"; value: root.rate(netUp.value) + "  (" + root.bytesText(netUpTotal.value) + " total)" }
+            PopupRow { name: "Download"; value: root.rate(sensorValue("net", "down")) + "  (" + root.bytesText(sensorValue("net", "downTotal")) + " total)" }
+            PopupRow { name: "Upload"; value: root.rate(sensorValue("net", "up")) + "  (" + root.bytesText(sensorValue("net", "upTotal")) + " total)" }
             PopupGraph { statId: "net" }
         }
     }
@@ -1402,14 +1417,14 @@ PlasmoidItem {
             PopupRow {
                 visible: root.popupTempAvg
                 name: "CPU temp (avg)"
-                value: root.temp(tempAvg.value)
+                value: root.temp(sensorValue("temp", "value"))
                 valueColor: root.statTextColor("temp")
             }
             PopupGraph { statId: "temp"; wanted: root.popupTempAvg }
             PopupRow {
                 visible: root.popupTempMax
                 name: "CPU temp (max core)"
-                value: root.temp(tempMax.value)
+                value: root.temp(sensorValue("temp", "max"))
                 valueColor: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
             }
 
@@ -1431,7 +1446,7 @@ PlasmoidItem {
 
                 Repeater {
                     id: perCore
-                    model: root.popupCores && root.isNum(coreCount.value) ? Number(coreCount.value) : 0
+                    model: root.popupCores && root.isNum(sensorValue("temp", "coreCount")) ? Number(sensorValue("temp", "coreCount")) : 0
 
                     delegate: RowLayout {
                         id: coreRow

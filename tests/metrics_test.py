@@ -163,25 +163,36 @@ check("the popup's max-core alert is the registry's row alert", 'M.byId("temp").
 check("limitCtx carries exactly the warning temperature", re.search(r'limitCtx: \(\{ warnTempC: warnTempC \}\)', MAIN_QML) is not None)
 check("statYTo asks the registry for the scale end", "M.scaleEnd(m, limitCtx, M.followsData(m) ? peakOf(id) : 0)" in MAIN_QML)
 check("statYFrom asks the registry", "M.scaleFrom(m)" in MAIN_QML)
-check("the peak step is the registry's", "M.stepPeak(M.byId(id), prev, scaleVals(id), ctx, refreshMs)" in MAIN_QML)
-# The three triggers of a peak step stay where the old per-stat code ran, and nowhere else.
-equal("peak triggers", sorted(re.findall(r'stepPeak\("(\w+)"\)', MAIN_QML)), ["fan", "freq", "net"])
-check("freq steps from the maximum-frequency sensor", re.search(r'id: freqMax.*?onValueChanged: root\.stepPeak\("freq"\)', MAIN_QML, re.S) is not None)
-check("net steps from the download sensor", re.search(r'id: netDown.*?onValueChanged: root\.stepPeak\("net"\)', MAIN_QML, re.S) is not None)
+check("the peak step is the registry's", "M.stepPeak(M.byId(id), prev, statVals(id), ctx, refreshMs)" in MAIN_QML)
+# A peak step has two kinds of trigger: the sensor the registry names as the scale's `trigger` (one generic
+# handler in the sensor delegate) and the fan speed, which is not a sensor.
+equal("literal peak triggers", sorted(re.findall(r'stepPeak\("(\w+)"\)', MAIN_QML)), ["fan"])
 check("fan steps from the fan speed", 'onFanRpmChanged: root.stepPeak("fan")' in MAIN_QML)
-# scaleVals() hands each following scale the keys the registry says it watches.
-sv = re.search(r'function scaleVals\(id\) \{(.*?)\n    \}', MAIN_QML, re.S).group(1)
-watched = {sid: sorted(re.findall(r'(\w+):', body)) for sid, body in re.findall(r'case "(\w+)":\s+return \{(.*?)\}', sv)}
-equal("scaleVals covers exactly the following scales", sorted(watched), run(M, "METRICS.filter(followsData).map(function(m){return m.id}).sort()"))
-for sid, keys in watched.items():
-    equal("scaleVals of %s supplies the keys its scale observes" % sid, keys, sorted(run(M, "byId(%s).scale.observe.keys" % json.dumps(sid))))
+check("the sensor delegate steps the peak of the stat whose scale names it",
+      "onValueChanged: if (M.byId(modelData.id).scale.trigger === modelData.name) root.stepPeak(modelData.id)" in MAIN_QML)
+equal("triggers of the following scales", run(M, "METRICS.filter(followsData).map(function(m){return [m.id, m.scale.trigger]})"),
+      [["freq", "max"], ["net", "down"], ["fan", None]])
+for sid in ("freq", "net"):
+    equal("the trigger of %s is one of its sensors" % sid, run(M, "byId('%s').scale.trigger in byId('%s').sensors" % (sid, sid)), True)
+equal("a scale without a sensor has no trigger", [run(M, "byId('%s').scale.trigger" % x) for x in ("cpu", "ram", "temp", "bat", "fan")], [None] * 5)
+# statVals() hands a following scale the keys the registry says it watches (plain sensors: their names; fan: its own case).
+for sid in run(M, "METRICS.filter(followsData).map(function(m){return m.id})"):
+    keys = run(M, "byId(%s).scale.observe.keys" % json.dumps(sid))
+    sensors = run(M, "Object.keys(byId(%s).sensors)" % json.dumps(sid))
+    check("the scale of %s watches keys that statVals supplies" % sid,
+          all(k in sensors for k in keys) if sensors else keys == ["value"])
 # One History per registry series, created from the registry (not one hand-written item per stat).
 check("the histories come from the registry's series", "model: root.historyKinds" in MAIN_QML and "M.METRICS[i].series[j]" in MAIN_QML)
 check("a history is wanted by the stat's graph and shown flags", "wanted: root.historyWanted(modelData.id)" in MAIN_QML)
-hs = re.search(r'historySensors: \(\{(.*?)\}\)', MAIN_QML, re.S).group(1)
-equal("every registry series has a sensor object for its history",
-      sorted(re.findall(r'"(\w+\.\w+)":', hs)),
-      sorted(run(M, "(function(){var o=[];METRICS.forEach(function(m){m.series.forEach(function(s){o.push(m.id+'.'+s)})});return o})()")))
+check("no hand-written historySensors map is left", "historySensors" not in MAIN_QML)
+check("a plain-sensor series is the sensor of the same name", "return sensorOf(id, series)" in MAIN_QML)
+check("battery and fan feed their history through small QtObjects",
+      'if (id === "bat") return batSensor' in MAIN_QML and 'if (id === "fan") return fanSensor' in MAIN_QML)
+for mid in run(M, "METRICS.filter(function(m){return Object.keys(m.sensors).length}).map(function(m){return m.id})"):
+    series = run(M, "byId(%s).series" % json.dumps(mid))
+    sensors = run(M, "Object.keys(byId(%s).sensors)" % json.dumps(mid))
+    check("every series of %s names one of its sensors" % mid, all(x in sensors for x in series))
+equal("the stats without plain sensors are battery and fan", run(M, "METRICS.filter(function(m){return !Object.keys(m.sensors).length}).map(function(m){return m.id})"), ["bat", "fan"])
 for gone in ("readonly property bool gpCpu", "readonly property bool gdFan", "readonly property bool gpNet"):
     check("main.qml no longer has `%s` (the graph flags are read through the registry's keys)" % gone, gone not in MAIN_QML)
 check("statGraph reads the registry's gp key", "Plasmoid.configuration[m.keys.gp]" in MAIN_QML)
@@ -194,13 +205,22 @@ fmt_src = re.search(r'var FORMATS = \{(.*?)\n\}\n', METRICS_JS, re.S).group(1) +
 ctx_keys = sorted(set(re.findall(r'ctx(?: && ctx)?\.(\w+)', fmt_src)))
 equal("the formatters read only these settings", ctx_keys, ["netBits", "useF"])
 equal("main.qml puts exactly those into textCtx", sorted(re.findall(r'(\w+): \1', re.search(r'textCtx: \(\{(.*?)\}\)', MAIN_QML).group(1))), ctx_keys)
-# The values main.qml feeds each stat's templates: every key a template reads must be supplied.
+# The values main.qml feeds each stat's templates: every key a template reads must be supplied. A plain-sensor stat
+# gets every sensor of its entry under the sensor's name (sensorVals); battery and fan have their own cases.
 sv_src = re.search(r'function statVals\(id\) \{(.*?)\n    \}', MAIN_QML, re.S).group(1)
 supplied = {sid: sorted(re.findall(r'(\w+):', body)) for sid, body in re.findall(r'case "(\w+)":\s+return \{(.*?)\}', sv_src)}
+equal("statVals has its own case for exactly battery and fan", sorted(supplied), ["bat", "fan"])
+check("statVals falls back to the stat's sensors", "return sensorVals(id)" in sv_src)
+check("sensorVals names each value after its registry sensor",
+      "for (var name in M.byId(id).sensors) vals[name] = sensorValue(id, name)" in MAIN_QML)
 for stat in run(M, "DEFAULT_ORDER"):
     used = run(M, "(function(){var p=byId(%s).panel, t=[p.full,p.compact].concat(p.vertical,p.verticalCompact||[]), k={}; "
                   "t.forEach(function(x){(x.match(/\\{(\\w+)/g)||[]).forEach(function(y){k[y.slice(1)]=1})}); return Object.keys(k).sort()})()" % json.dumps(stat))
-    equal("statVals of %s supplies the keys its templates read" % stat, supplied.get(stat), used)
+    sensors = run(M, "Object.keys(byId(%s).sensors).sort()" % json.dumps(stat))
+    if stat in supplied:
+        equal("statVals of %s supplies the keys its templates read" % stat, supplied[stat], used)
+    else:
+        check("the sensors of %s supply the keys its templates read (%s)" % (stat, used), all(k in sensors for k in used))
     equal("the sample of %s has the same keys" % stat, sorted(run(M, "Object.keys(byId(%s).panel.sample)" % json.dumps(stat))), used)
 # The wrappers the popup keeps call formatters that exist.
 for f in set(re.findall(r'M\.FORMATS\.(\w+)', MAIN_QML)):
@@ -279,6 +299,27 @@ equal("gating: freq max follows show or popup, min popup and expanded", [active(
 equal("gating: temp max follows its option", [active("temp", "max", expanded=True), active("temp", "max", expanded=True, opts={"popupMax": True}),
       active("temp", "max", opts={"popupMax": True})], [False, True, False])
 
+# The 14 hand-written `enabled:` expressions of v0.9.2 main.qml, as functions of the flags (show, popup, expanded and
+# the two temperature options), compared with the registry's gates over every combination.
+OLD_GATES = {
+    "cpu.value": lambda f: f["show"] or f["popup"], "ram.value": lambda f: f["show"] or f["popup"],
+    "ram.used": lambda f: f["popup"] and f["expanded"], "ram.total": lambda f: f["popup"] and f["expanded"],
+    "temp.value": lambda f: f["show"] or f["popup"], "temp.max": lambda f: f["popupMax"] and f["expanded"],
+    "temp.coreCount": lambda f: f["popupCores"] and f["expanded"],
+    "freq.value": lambda f: f["show"] or f["popup"], "freq.min": lambda f: f["popup"] and f["expanded"],
+    "freq.max": lambda f: f["show"] or f["popup"],
+    "net.down": lambda f: f["show"] or f["popup"], "net.up": lambda f: f["show"] or f["popup"],
+    "net.downTotal": lambda f: f["popup"] and f["expanded"], "net.upTotal": lambda f: f["popup"] and f["expanded"],
+}
+equal("the registry lists exactly the 14 plain sensors of v0.9.2", sorted(run(M, "sensorKinds().map(function(k){return k.id+'.'+k.name})")), sorted(OLD_GATES))
+combos = [dict(show=a, popup=b, expanded=c, popupMax=d, popupCores=e) for a in (False, True) for b in (False, True)
+          for c in (False, True) for d in (False, True) for e in (False, True)]
+got = run(M, "(function(){var cs=%s, out={};sensorKinds().forEach(function(k){out[k.id+'.'+k.name]=cs.map(function(c){"
+             "return sensorActive(byId(k.id).sensors[k.name],{show:c.show,popup:c.popup,expanded:c.expanded,opts:{popupMax:c.popupMax,popupCores:c.popupCores}})})});return out})()"
+          % json.dumps(combos))
+for name, old in OLD_GATES.items():
+    equal("gate of %s equals the v0.9.2 enabled expression in all 32 flag combinations" % name, got[name], [bool(old(c)) for c in combos])
+
 # ---------------------------------------------------------------- 4. structure
 print("4. structure")
 ids = run(M, "METRICS.map(function(m){return m.id})")
@@ -350,8 +391,12 @@ reg_ids = set()
 for mid in ids:
     for s in run(M, "Object.keys(byId('%s').sensors).map(function(k){return byId('%s').sensors[k].id})" % (mid, mid)):
         reg_ids.add(s)
-reg_ids.add("cpu/cpu")      # per-core: sensor "cpu/cpu" + N + "/temperature", described by popup.repeat.sensor
-equal("sensor ids equal main.qml's sensorId literals", sorted(reg_ids), sorted(qml_ids))
+# (per-core sensors, "cpu/cpu" + N + "/temperature", are described by popup.repeat.sensor and stay in the popup)
+equal("main.qml spells no registry sensor id itself (they come from the sensor delegate)", sorted(reg_ids & qml_ids), [])
+equal("the only sensorId literal left in main.qml is the per-core one", sorted(qml_ids), ["cpu/cpu"])
+check("the sensor delegate takes its id from the registry", "sensorId: entry.id" in MAIN_QML)
+check("the sensors come from the registry", "readonly property var sensorKinds: M.sensorKinds()" in MAIN_QML and "model: root.sensorKinds" in MAIN_QML)
+check("trigger sensors catch up once they all exist", "if (count === root.sensorKinds.length) root.stepTriggerPeaks()" in MAIN_QML)
 equal("per-core sensor pattern", run(M, "byId('temp').popup.repeat.sensor"), "cpu/cpu{n}/temperature")
 check("main.qml builds the per-core id the same way", '"cpu/cpu" + coreRow.index + "/temperature"' in MAIN_QML)
 equal("fan discovery pattern equals main.qml's", "/" + run(M, "byId('fan').source.pattern").replace("/", "\\/") + "/",
@@ -362,7 +407,7 @@ for what, snippet in (("battery refresh", "interval: 5000"),
                       ("fan retry", "fanScan.interval = 3000")):
     check("main.qml still says: %s" % what, snippet in MAIN_QML)
 equal("registry net scale", run(M, "byId('net').scale"),
-      {"from": 0, "mode": "decay", "floor": 100000, "decay": 0.99, "needsGraph": True,
+      {"from": 0, "mode": "decay", "floor": 100000, "decay": 0.99, "needsGraph": True, "trigger": "down",
        "observe": {"keys": ["down", "up"], "combine": "max", "barCombine": "sum"}})
 equal("registry fan source numbers", run(M, "[byId('fan').source.firstScanMs,byId('fan').source.retryMs,byId('fan').source.maxAttempts]"), [800, 3000, 10])
 equal("registry battery interval", run(M, "byId('bat').source.intervalMs"), 5000)

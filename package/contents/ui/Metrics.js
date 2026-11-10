@@ -4,9 +4,9 @@
 // templates into panel / popup text.
 //
 // STATUS: main.qml takes its panel text (statText, verticalLines), its horizontal width reserves, its alerts,
-// its graph scales and its graph histories (one per series) from this file, and reads the graph and popup flags
-// through keys.gp / keys.gd / keys.popup; the rest of a descriptor (the other keys, sensors, popup rows) is not
-// used by the widget yet and is checked against it by tests/metrics_test.py. This is a .pragma library: the
+// its graph scales, its graph histories (one per series) and its plain sensors (one per `sensors` entry, polled
+// when sensorActive says so) from this file, and reads the graph and popup flags through keys.gp / keys.gd /
+// keys.popup; the rest of a descriptor (the other keys, popup rows) is not used by the widget yet and is checked against it by tests/metrics_test.py. This is a .pragma library: the
 // functions are pure and see no QML properties, so the caller passes every setting in through ctx and every
 // value through vals.
 //
@@ -28,6 +28,8 @@
 //               observe     { keys, combine, barCombine }: the vals keys the scale watches (combine "max" or
 //                           "sum" when there are several; barCombine replaces combine when bars are drawn)
 //               needsGraph  true: the scale is only followed while a graph of the stat is enabled
+//               trigger     name of the sensor (a key of `sensors`) whose update steps the peak, once per refresh
+//                           (a stat without one, the fan, steps from its own value change)
 //   alert     function(vals, ctx) -> bool: the panel text turns red
 //   series    keys of vals drawn as graph series ([value] or [down, up]): one history per series
 //   popup     rows: [{ label, value, when, alert }], graph: bool, hooks: names of bespoke parts
@@ -202,7 +204,7 @@ var METRICS = [
             sample: { value: 9900 }                // 9.9 GHz
         },
         // The hardware maximum is not a sensor: the scale grows to the highest "max" seen, never below 1 GHz.
-        scale: { from: 0, mode: "peak", floor: 1000, observe: { keys: ["max"] } },
+        scale: { from: 0, mode: "peak", floor: 1000, trigger: "max", observe: { keys: ["max"] } },
         series: ["value"],
         popup: {
             rows: [
@@ -240,7 +242,7 @@ var METRICS = [
         // download and upload, so they observe the sum; the line graph the higher one. Only followed while a
         // net graph is enabled.
         scale: {
-            from: 0, mode: "decay", floor: 100000, decay: 0.99, needsGraph: true,
+            from: 0, mode: "decay", floor: 100000, decay: 0.99, needsGraph: true, trigger: "down",
             observe: { keys: ["down", "up"], combine: "max", barCombine: "sum" }
         },
         series: ["down", "up"],
@@ -397,6 +399,15 @@ function stepPeak(m, prev, vals, ctx, dtMs) {
 // Whether the stat's panel text (and graph colour) is in its alert state.
 function alertOf(m, vals, ctx) {
     return !!m.alert && !!m.alert(vals, ctx)
+}
+
+// ---- sensors ----
+// Every plain sensor of every stat, in registry order: [{ id: <stat id>, name: <key of the stat's sensors> }].
+function sensorKinds() {
+    var list = []
+    for (var i = 0; i < METRICS.length; ++i)
+        for (var name in METRICS[i].sensors) list.push({ id: METRICS[i].id, name: name })
+    return list
 }
 
 // ---- sensor gating ----
