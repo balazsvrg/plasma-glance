@@ -647,9 +647,6 @@ PlasmoidItem {
     // evaluates an alert or a scale reads this property, so it re-evaluates when the warning temperature changes.
     // (A peak step also needs barChart and graph flags; stepPeak() reads them when it runs.)
     readonly property var limitCtx: ({ warnTempC: warnTempC })
-    // The popup's "max core" temperature is highlighted by its own value (the registry's row alert), so the
-    // colour always matches the number shown next to it.
-    readonly property bool tempHot: M.byId("temp").popup.rows[1].alert({ max: sensorValue("temp", "max") }, limitCtx)
 
     // Every shown stat, in the user's order, as the panel writes it (also the ones hidden by the maximum length).
     function tooltipText() {
@@ -1357,7 +1354,17 @@ PlasmoidItem {
         return Kirigami.Theme.textColor
     }
 
-    // The block of a stat made only of registry rows and a graph (every stat but temperature and battery so far).
+    // One registry row of a stat's popup.
+    component StatRow: PopupRow {
+        required property var modelData
+        property string statId
+        visible: M.popupRowShown(modelData, root.popupFlags(statId))
+        name: modelData.label
+        value: M.render(modelData.value, root.popupVals(statId), root.textCtx)
+        valueColor: root.popupRowColor(statId, modelData)
+        fanIcon: modelData.decoration === "fanIcon"
+    }
+    // The block of a stat made only of registry rows and a graph (every stat but the battery so far).
     // Its stat id comes from the Loader that holds it.
     Component {
         id: statBlock
@@ -1365,26 +1372,30 @@ PlasmoidItem {
             id: blk
             readonly property string statId: parent && parent.blockStatId ? parent.blockStatId : ""
             Repeater {
-                model: blk.statId ? M.byId(blk.statId).popup.rows : []
-                delegate: PopupRow {
-                    required property var modelData
-                    visible: M.popupRowShown(modelData, root.popupFlags(blk.statId))
-                    name: modelData.label
-                    value: M.render(modelData.value, root.popupVals(blk.statId), root.textCtx)
-                    valueColor: root.popupRowColor(blk.statId, modelData)
-                    fanIcon: modelData.decoration === "fanIcon"
-                }
+                model: blk.statId ? M.byId(blk.statId).popup.rows.slice(0, M.popupRowsBeforeGraph(M.byId(blk.statId))) : []
+                delegate: StatRow { statId: blk.statId }
             }
             PopupGraph {
                 statId: blk.statId
                 wanted: blk.statId !== "" && M.popupGraphShown(M.byId(blk.statId), root.popupFlags(blk.statId))
+            }
+            Repeater {
+                model: blk.statId ? M.byId(blk.statId).popup.rows.slice(M.popupRowsBeforeGraph(M.byId(blk.statId))) : []
+                delegate: StatRow { statId: blk.statId }
+            }
+            Loader {
+                readonly property string blockStatId: blk.statId
+                active: blk.statId !== "" && !!M.byId(blk.statId).popup.repeat
+                        && M.flagOn(M.byId(blk.statId).popup.repeat.when, root.popupFlags(blk.statId))
+                visible: active && item !== null && item.count > 0
+                Layout.fillWidth: true
+                sourceComponent: repeatBlock
             }
         }
     }
 
     function popupBlock(id) {
         switch (id) {
-        case "temp": return tempBlock
         case "bat":  return batBlock
         }
         return M.byId(id) ? statBlock : null
@@ -1419,63 +1430,49 @@ PlasmoidItem {
             PopupGraph { statId: "bat" }
         }
     }
+    // The per-item lines of a stat's popup (the temperature of each core): a header and a two-column grid, one
+    // line per item. Its sensors only exist while the popup is open (one per delegate).
     Component {
-        id: tempBlock
+        id: repeatBlock
         ColumnLayout {
-            PopupRow {
-                visible: root.popupTempAvg
-                name: "CPU temp (avg)"
-                value: root.temp(sensorValue("temp", "value"))
-                valueColor: root.statTextColor("temp")
-            }
-            PopupGraph { statId: "temp"; wanted: root.popupTempAvg }
-            PopupRow {
-                visible: root.popupTempMax
-                name: "CPU temp (max core)"
-                value: root.temp(sensorValue("temp", "max"))
-                valueColor: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-            }
-
-            // ---- per-core temperatures ----
-            // Sensors are created per delegate, so they only exist while the popup is open.
-            // Threads of one physical core (hyperthreading) report the same temperature.
+            id: rep
+            readonly property string statId: parent && parent.blockStatId ? parent.blockStatId : ""
+            readonly property var spec: statId ? M.byId(statId).popup.repeat : null
+            readonly property int count: spec && root.isNum(root.coreCount) ? Number(root.coreCount) : 0
             PlasmaComponents.Label {
-                visible: root.popupCores && perCore.count > 0
                 Layout.topMargin: Kirigami.Units.smallSpacing
-                text: "Per core"
+                text: rep.spec ? rep.spec.header : ""
                 font.bold: true
             }
             GridLayout {
-                visible: root.popupCores && perCore.count > 0
                 Layout.fillWidth: true
                 columns: 2
                 columnSpacing: Kirigami.Units.gridUnit * 2
                 rowSpacing: 0
 
                 Repeater {
-                    id: perCore
-                    model: root.popupCores && root.isNum(root.coreCount) ? Number(root.coreCount) : 0
+                    model: rep.count
 
                     delegate: RowLayout {
-                        id: coreRow
+                        id: item
                         required property int index
                         Layout.fillWidth: true
 
                         Sensors.Sensor {
-                            id: coreTemp
-                            sensorId: "cpu/cpu" + coreRow.index + "/temperature"
+                            id: itemSensor
+                            sensorId: rep.spec.sensor.replace("{n}", item.index)
                             updateRateLimit: root.refreshMs
                         }
-                        readonly property bool hot: root.isNum(coreTemp.value) && coreTemp.value >= root.warnTempC
+                        readonly property bool hot: rep.spec.alert({ value: itemSensor.value }, root.limitCtx)
 
                         PlasmaComponents.Label {
-                            text: "Core " + (coreRow.index + 1)
+                            text: rep.spec.label.replace("{n}", item.index + 1)
                             Layout.fillWidth: true
                         }
                         PlasmaComponents.Label {
-                            text: root.temp(coreTemp.value)
+                            text: M.render(rep.spec.value, { value: itemSensor.value }, root.textCtx)
                             font.bold: true
-                            color: coreRow.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                            color: item.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                         }
                     }
                 }

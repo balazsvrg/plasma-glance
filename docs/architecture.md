@@ -500,7 +500,7 @@ the state and the triggers. `Metrics.js` is a `.pragma library` (pure functions,
 - `statAlert(id)` is `M.alertOf(entry, statVals(id), limitCtx)`; a stat without an `alert` function never reads
   its values. Temperature alerts at `value >= warnTempC`, battery below 15 % and not charging.
   `statTextColor` and `statLineColor` derive from it: red (`negativeTextColor`) in alert, otherwise the text or
-  highlight colour. The popup's "max core" temperature uses the registry's second row alert (`tempHot`).
+  highlight colour. The popup's "max core" temperature uses the registry's second row alert (`popupRowColor`).
 
 Peaks (frequency, network, fan: the stats whose scale `followsData`):
 

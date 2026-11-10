@@ -159,7 +159,7 @@ check("the reserve items come from the registry's entries", "M.METRICS.length" i
 check("statCompact asks the registry which stats have a shorter vertical form", "m.panel.verticalCompact" in MAIN_QML)
 check("the icon width comes from the registry's decoration", 'm.panel.decoration === "fanIcon"' in MAIN_QML)
 check("statAlert delegates to M.alertOf", "M.alertOf(m, statVals(id), limitCtx)" in MAIN_QML)
-check("the popup's max-core alert is the registry's row alert", 'M.byId("temp").popup.rows[1].alert(' in MAIN_QML)
+check("a popup row's alert is the registry's (no hand-written tempHot)", "tempHot" not in MAIN_QML and "row.alert(popupVals(id), limitCtx)" in MAIN_QML)
 check("limitCtx carries exactly the warning temperature", re.search(r'limitCtx: \(\{ warnTempC: warnTempC \}\)', MAIN_QML) is not None)
 check("statYTo asks the registry for the scale end", "M.scaleEnd(m, limitCtx, M.followsData(m) ? peakOf(id) : 0)" in MAIN_QML)
 check("statYFrom asks the registry", "M.scaleFrom(m)" in MAIN_QML)
@@ -393,7 +393,7 @@ for mid in ids:
         reg_ids.add(s)
 # (per-core sensors, "cpu/cpu" + N + "/temperature", are described by popup.repeat.sensor and stay in the popup)
 equal("main.qml spells no registry sensor id itself (they come from the sensor delegate)", sorted(reg_ids & qml_ids), [])
-equal("the only sensorId literal left in main.qml is the per-core one", sorted(qml_ids), ["cpu/cpu"])
+equal("main.qml has no sensorId literal at all (per-core ids come from popup.repeat.sensor)", sorted(qml_ids), [])
 check("the sensor delegate takes its id from the registry", "sensorId: entry.id" in MAIN_QML)
 check("the sensors come from the registry", "readonly property var sensorKinds: M.sensorKinds()" in MAIN_QML and "model: root.sensorKinds" in MAIN_QML)
 check("trigger sensors catch up once they all exist", "if (count !== root.sensorKinds.length) return" in MAIN_QML and "root.stepTriggerPeaks()" in MAIN_QML)
@@ -404,7 +404,8 @@ check("every key a panel template, alert or scale reads is a panel sensor", run(
 equal("only the core count skips the refresh rate limit", run(M, "sensorKinds().filter(function(k){return byId(k.id).sensors[k.name].noRateLimit}).map(function(k){return k.id+'.'+k.name}).join()"), "temp.coreCount")
 check("the trigger test is precomputed per sensor", "readonly property bool isTrigger" in MAIN_QML and "onValueChanged: if (isTrigger)" in MAIN_QML)
 equal("per-core sensor pattern", run(M, "byId('temp').popup.repeat.sensor"), "cpu/cpu{n}/temperature")
-check("main.qml builds the per-core id the same way", '"cpu/cpu" + coreRow.index + "/temperature"' in MAIN_QML)
+check("main.qml builds the per-item id from the registry pattern", 'sensorId: rep.spec.sensor.replace("{n}", item.index)' in MAIN_QML)
+check("per-item labels count from 1", 'rep.spec.label.replace("{n}", item.index + 1)' in MAIN_QML)
 equal("fan discovery pattern equals main.qml's", "/" + run(M, "byId('fan').source.pattern").replace("/", "\\/") + "/",
       "/" + re.search(r'if \(/(.*?)/\.test\(id\)\)', MAIN_QML).group(1) + "/")
 # Constants of the battery refresh and the fan discovery, as written in main.qml.
@@ -590,12 +591,16 @@ check("every popup row alert is 'panel' or a function", run(M, "METRICS.every(fu
 # ---- generic popup block (P4 step 2) ----
 for blk in ("cpuBlock", "ramBlock", "freqBlock", "netBlock", "fanBlock"):
     check("main.qml has no %s" % blk, "id: " + blk not in MAIN_QML)
-check("the stat block renders the registry's rows", "model: blk.statId ? M.byId(blk.statId).popup.rows : []" in MAIN_QML
-      and "M.render(modelData.value, root.popupVals(blk.statId), root.textCtx)" in MAIN_QML)
-check("the stat block's rows and graph use the registry's flags", "M.popupRowShown(modelData, root.popupFlags(blk.statId))" in MAIN_QML
+check("the stat block renders the registry's rows around the graph", "popup.rows.slice(0, M.popupRowsBeforeGraph(" in MAIN_QML
+      and "popup.rows.slice(M.popupRowsBeforeGraph(" in MAIN_QML
+      and "M.render(modelData.value, root.popupVals(statId), root.textCtx)" in MAIN_QML)
+check("the stat block's rows, graph and per-item lines use the registry's flags", "M.popupRowShown(modelData, root.popupFlags(statId))" in MAIN_QML
+      and "M.flagOn(M.byId(blk.statId).popup.repeat.when" in MAIN_QML
       and "M.popupGraphShown(M.byId(blk.statId), root.popupFlags(blk.statId))" in MAIN_QML)
 check("the loader hands its stat id to the block", "readonly property string blockStatId: modelData" in MAIN_QML)
-equal("popupBlock keeps only temp and bat hand-written", sorted(re.findall(r'case "(\w+)":\s+return (\w+)Block', MAIN_QML)), [("bat", "bat"), ("temp", "temp")])
+equal("popupBlock keeps only bat hand-written", sorted(re.findall(r'case "(\w+)":\s+return (\w+)Block', MAIN_QML)), [("bat", "bat")])
+check("main.qml has no tempBlock", "id: tempBlock" not in MAIN_QML)
+equal("rows before the graph", run(M, "METRICS.map(function(m){return m.id+':'+popupRowsBeforeGraph(m)}).join(' ')"), "cpu:1 ram:1 temp:1 freq:2 net:2 bat:1 fan:1")
 check("the fan icon comes from the registry's row decoration", 'fanIcon: modelData.decoration === "fanIcon"' in MAIN_QML)
 check("popup values come from the sensors (all of them) or the live values", "if (m.source) return statVals(id)" in MAIN_QML
       and "for (var name in m.sensors) vals[name] = sensorValue(id, name)" in MAIN_QML)

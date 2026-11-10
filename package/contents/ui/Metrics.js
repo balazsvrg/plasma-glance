@@ -37,7 +37,9 @@
 //             "hasFan") the stat's popup also needs. when / graphWhen / repeat.when name a flag: "popup" (keys.popup)
 //             or an option name (keys.options); no when means the row is shown whenever the stat's popup is.
 //             alert is "panel" (the panel's rule) or a function(vals, ctx). decoration "fanIcon" puts the fan icon
-//             before the value.
+//             before the value. graphAfter: index of the row the graph follows (default: after the last row).
+//             repeat: { when, countSensor, header, label, sensor, value, alert }, "{n}" is the item index in
+//             sensor and index + 1 in label.
 // Template syntax: "{key:format}" (see FORMATS); any other text is copied as is.
 
 var DEFAULT_ORDER = ["cpu", "ram", "temp", "freq", "net", "bat", "fan"]
@@ -185,7 +187,7 @@ var METRICS = [
                 { label: "CPU temp (max core)", value: "{max:temp}", when: "popupMax",
                   alert: function (vals, ctx) { return isNum(vals.max) && vals.max >= ctx.warnTempC } }
             ],
-            graph: true, graphWhen: "popup",       // the graph needs the average row
+            graph: true, graphWhen: "popup", graphAfter: 0,   // the graph needs the average row and sits under it
             // One sensor per core, "cpu/cpu<N>/temperature", N = 0 .. coreCount - 1
             repeat: {
                 hook: "perCore", when: "popupCores", countSensor: "coreCount",
@@ -447,6 +449,11 @@ function popupOn(m, flags) {
     return false
 }
 function popupRowShown(row, flags) { return flagOn(row.when, flags) }
+// How many rows come before the graph.
+function popupRowsBeforeGraph(m) {
+    var p = m.popup
+    return p.graphAfter === undefined ? p.rows.length : p.graphAfter + 1
+}
 function popupGraphShown(m, flags) { return !!m.popup.graph && flagOn(m.popup.graphWhen, flags) }
 // Every label the popup's name column can show (its width is the widest).
 function popupLabels(list) {
