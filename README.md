@@ -35,14 +35,21 @@ Uninstall with `./uninstall.sh` (remove it from your panels first).
 
 ## Settings
 
-Right-click the widget in the panel and choose **Configure…**:
+Right-click the widget in the panel and choose **Configure…**. There are two tabs.
+
+**General**
 
 | Setting | Default |
 |---|---|
-| Show CPU / memory / temperature | all on |
+| Show CPU / memory / temperature in the panel | all on |
 | Temperature unit | °C |
 | Warning threshold (always entered in °C) | 80 |
 | Refresh interval | 1000 ms (min 250) |
+
+**Popup** (what the click-to-open details show; every item is on by default)
+
+CPU usage, memory (used / total), average temperature, hottest-core temperature,
+and per-core temperatures. Turning off the per-core list also stops its sensors.
 
 ## Develop
 
@@ -67,6 +74,7 @@ cpu-mem-temp-widget/
   contents/config/main.xml      settings schema and defaults
   contents/config/config.qml    registers the settings page
   contents/ui/main.qml          panel view, popup, sensors
-  contents/ui/configGeneral.qml settings page
+  contents/ui/configGeneral.qml settings tab: General
+  contents/ui/configPopup.qml   settings tab: Popup
 install.sh / uninstall.sh
 ```

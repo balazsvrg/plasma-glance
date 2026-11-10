@@ -7,4 +7,9 @@ ConfigModel {
         icon: "preferences-system"
         source: "configGeneral.qml"
     }
+    ConfigCategory {
+        name: i18n("Popup")
+        icon: "view-list-details"
+        source: "configPopup.qml"
+    }
 }

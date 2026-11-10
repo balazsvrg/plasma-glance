@@ -33,4 +33,26 @@
             <max>10000</max>
         </entry>
     </group>
+    <group name="Popup">
+        <entry name="popupCpu" type="Bool">
+            <label>Popup: show CPU usage</label>
+            <default>true</default>
+        </entry>
+        <entry name="popupMemory" type="Bool">
+            <label>Popup: show memory</label>
+            <default>true</default>
+        </entry>
+        <entry name="popupTempAvg" type="Bool">
+            <label>Popup: show average CPU temperature</label>
+            <default>true</default>
+        </entry>
+        <entry name="popupTempMax" type="Bool">
+            <label>Popup: show hottest core temperature</label>
+            <default>true</default>
+        </entry>
+        <entry name="popupCores" type="Bool">
+            <label>Popup: show per-core temperatures</label>
+            <default>true</default>
+        </entry>
+    </group>
 </kcfg>

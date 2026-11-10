@@ -16,6 +16,11 @@ PlasmoidItem {
     readonly property bool showRam: Plasmoid.configuration.showRam
     readonly property bool showTemp: Plasmoid.configuration.showTemp
     readonly property bool useF: Plasmoid.configuration.useFahrenheit
+    readonly property bool popupCpu: Plasmoid.configuration.popupCpu
+    readonly property bool popupMemory: Plasmoid.configuration.popupMemory
+    readonly property bool popupTempAvg: Plasmoid.configuration.popupTempAvg
+    readonly property bool popupTempMax: Plasmoid.configuration.popupTempMax
+    readonly property bool popupCores: Plasmoid.configuration.popupCores
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs }
@@ -140,25 +145,28 @@ PlasmoidItem {
         columnSpacing: Kirigami.Units.largeSpacing
         Layout.minimumWidth: Kirigami.Units.gridUnit * 14
 
-        PlasmaComponents.Label { text: "CPU usage" }
-        PlasmaComponents.Label { text: root.pct(cpuUsage.value); font.bold: true }
+        PlasmaComponents.Label { visible: root.popupCpu; text: "CPU usage" }
+        PlasmaComponents.Label { visible: root.popupCpu; text: root.pct(cpuUsage.value); font.bold: true }
 
-        PlasmaComponents.Label { text: "Memory" }
+        PlasmaComponents.Label { visible: root.popupMemory; text: "Memory" }
         PlasmaComponents.Label {
+            visible: root.popupMemory
             text: root.gib(memUsed.value) + " / " + root.gib(memTotal.value)
                   + " (" + root.pct(memPercent.value) + ")"
             font.bold: true
         }
 
-        PlasmaComponents.Label { text: "CPU temp (avg)" }
+        PlasmaComponents.Label { visible: root.popupTempAvg; text: "CPU temp (avg)" }
         PlasmaComponents.Label {
+            visible: root.popupTempAvg
             text: root.temp(tempAvg.value)
             font.bold: true
             color: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
         }
 
-        PlasmaComponents.Label { text: "CPU temp (max core)" }
+        PlasmaComponents.Label { visible: root.popupTempMax; text: "CPU temp (max core)" }
         PlasmaComponents.Label {
+            visible: root.popupTempMax
             text: root.temp(tempMax.value)
             font.bold: true
             color: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
@@ -168,7 +176,7 @@ PlasmoidItem {
         // Sensors are created per delegate, so they only exist while the popup is open.
         // Threads of one physical core (hyperthreading) report the same temperature.
         PlasmaComponents.Label {
-            visible: perCore.count > 0
+            visible: root.popupCores && perCore.count > 0
             Layout.columnSpan: 2
             Layout.topMargin: Kirigami.Units.smallSpacing
             text: "Per core"
@@ -176,7 +184,7 @@ PlasmoidItem {
         }
 
         GridLayout {
-            visible: perCore.count > 0
+            visible: root.popupCores && perCore.count > 0
             Layout.columnSpan: 2
             Layout.fillWidth: true
             columns: 2
@@ -185,7 +193,7 @@ PlasmoidItem {
 
             Repeater {
                 id: perCore
-                model: root.isNum(coreCount.value) ? Number(coreCount.value) : 0
+                model: root.popupCores && root.isNum(coreCount.value) ? Number(coreCount.value) : 0
 
                 delegate: RowLayout {
                     id: coreRow
@@ -210,6 +218,14 @@ PlasmoidItem {
                     }
                 }
             }
+        }
+
+        PlasmaComponents.Label {
+            visible: !root.popupCpu && !root.popupMemory && !root.popupTempAvg
+                     && !root.popupTempMax && !root.popupCores
+            Layout.columnSpan: 2
+            text: "Nothing to show. Enable items under Configure > Popup."
+            opacity: 0.7
         }
     }
 }
