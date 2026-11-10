@@ -45,12 +45,12 @@ PlasmoidItem {
     // A sensor is switched off when nothing shows its stat, so nothing polls for data nobody sees.
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs; enabled: root.showCpu || root.popupCpu }
     Sensors.Sensor { id: memPercent; sensorId: "memory/physical/usedPercent";  updateRateLimit: root.refreshMs; enabled: root.showRam || root.popupMemory }
-    Sensors.Sensor { id: memUsed;    sensorId: "memory/physical/used";         updateRateLimit: root.refreshMs; enabled: root.popupMemory }
-    Sensors.Sensor { id: memTotal;   sensorId: "memory/physical/total";        updateRateLimit: root.refreshMs; enabled: root.popupMemory }
+    Sensors.Sensor { id: memUsed;    sensorId: "memory/physical/used";         updateRateLimit: root.refreshMs; enabled: root.popupMemory && root.expanded }
+    Sensors.Sensor { id: memTotal;   sensorId: "memory/physical/total";        updateRateLimit: root.refreshMs; enabled: root.popupMemory && root.expanded }
     Sensors.Sensor { id: tempAvg;    sensorId: "cpu/all/averageTemperature";   updateRateLimit: root.refreshMs; enabled: root.showTemp || root.popupTempAvg }
-    Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs; enabled: root.popupTempMax }
+    Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs; enabled: root.popupTempMax && root.expanded }
     Sensors.Sensor { id: freqAvg;    sensorId: "cpu/all/averageFrequency";     updateRateLimit: root.refreshMs; enabled: root.showFreq || root.popupFreq }
-    Sensors.Sensor { id: freqMin;    sensorId: "cpu/all/minimumFrequency";     updateRateLimit: root.refreshMs; enabled: root.popupFreq }
+    Sensors.Sensor { id: freqMin;    sensorId: "cpu/all/minimumFrequency";     updateRateLimit: root.refreshMs; enabled: root.popupFreq && root.expanded }
     Sensors.Sensor {
         id: freqMax
         sensorId: "cpu/all/maximumFrequency"
@@ -70,8 +70,8 @@ PlasmoidItem {
         onValueChanged: root.trackNetPeak()          // once per refresh (upload updates in the same tick)
     }
     Sensors.Sensor { id: netUp; sensorId: "network/all/upload"; updateRateLimit: root.refreshMs; enabled: root.showNet || root.popupNet }
-    Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs; enabled: root.popupNet }
-    Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs; enabled: root.popupNet }
+    Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
+    Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
     // Network graph scale: rises at once to the highest rate (down or up) and decays about 1% per
     // second of real time, whatever the refresh rate; never below 100 KB/s.
     property real netPeak: 100000
@@ -219,7 +219,7 @@ PlasmoidItem {
     QtObject { id: fanSensor; readonly property var value: root.fanRpm }
 
     // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
-    Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount"; enabled: root.popupCores }
+    Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount"; enabled: root.popupCores && root.expanded }
 
     // ---- graph history ----
     // Each stat has its own history. It is collected only while a graph that
