@@ -94,3 +94,17 @@ cpu-mem-temp-widget/
   contents/ui/configGraphs.qml  settings tab: Graphs
 install.sh / uninstall.sh
 ```
+
+## Changelog
+
+**0.3**
+- Optional line graphs: in the panel (Behind text or Inline) and under each popup item.
+- New Graphs settings tab: panel style, popup graphs, history length (30 s, 1 min, 5 min).
+- Per-stat history, collected only for stats a graph shows.
+
+**0.2**
+- Per-core temperatures in the popup.
+- Popup settings tab: toggle every popup item.
+
+**0.1**
+- Panel strip with CPU, memory and temperature, popup, General settings, vertical panel layout.
