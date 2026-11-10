@@ -168,9 +168,13 @@ install.sh / uninstall.sh
 
 ## Changelog
 
-**Unreleased**
+**0.5**
 - Reorder the stats: the Metrics tab is a table whose rows can be dragged (or moved with arrows). The order
-  drives the panel strip and the popup, and decides which stats are hidden first when space is short.
+  drives the panel strip, the popup and the tooltip, and decides which stats are hidden first when space is
+  short; the first stat in your order is never hidden.
+- The table is styled like a Dolphin file list: an outline, a slightly darker inside and alternating row colours.
+- More robust fan detection (retries at login, unloads once found), optional sensors only run while something
+  shows them, and the network graph scale decays in real time.
 
 **0.4**
 - New stats, all off by default: CPU frequency, network speed (all interfaces, bytes or bits), battery
