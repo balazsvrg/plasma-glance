@@ -118,8 +118,8 @@ and reload Plasma. (A system-wide install needs `sudo ... -g -r` instead.)
 
 - **It is not in the Add Widgets list:** Plasma has not reloaded yet. Run the reload command above.
 - **The widget shows "Sorry! There was an error loading ...":** a component from the requirements table is
-  missing, or the install is damaged. Run `plasmawindowed org.local.cpumemtemp` in a terminal to see the
-  message, install the missing package and reload.
+  missing, or the install is damaged. Run `plasmawindowed org.local.cpumemtemp` in a terminal: the error is
+  drawn inside the window it opens, not printed to the terminal. Install the missing package and reload.
 - **A stat shows `--` or a value of 0:** that sensor is not available on this machine, or has not reported
   yet. Give it a few seconds after loading.
 - **There is no Battery or Fan row in Configure > Metrics:** the widget did not find that hardware. It
@@ -144,14 +144,17 @@ Right-click the widget in the panel and choose **Configure…**. There are three
 | Network speed unit: bytes (MB/s) or bits (Mb/s) | bytes |
 | Warning threshold (always entered in °C) | 80 |
 | Maximum length (px) of the panel strip; 0 = no limit | no limit |
-| Refresh interval | 1000 ms (min 250) |
+| Refresh interval | 1000 ms (250 to 10000) |
+
+The refresh interval applies to the sensors; the battery comes from the power-management engine, which the
+widget polls every 5 seconds whatever the setting.
 
 **Metrics**: a table with one row per stat. Each stat has four checkboxes: whether it is **shown** in the
 panel and in the popup, and whether each of those gets a **graph**. An *All graphs* row turns
 every graph on or off in one click. Graphs are off by default.
 
 **Reordering:** drag a row by its handle (or use the up and down arrows) to set the order of the stats.
-The order is used in the panel (left to right) and in the popup (top to bottom). The hottest-core and
+The order is used in the panel (left to right), in the popup (top to bottom) and in the tooltip. The hottest-core and
 per-core rows move with CPU temperature. When space is short, stats at the bottom are hidden first.
 
 | Stat | Panel | Popup |
@@ -207,7 +210,8 @@ that fits:
 4. If it still does not fit, stats are dropped from the end of the strip (Fan, Battery, Network,
    Frequency, Temperature, Memory in the default order). The first stat in your order is never dropped.
 
-The tooltip always lists every stat, including dropped ones. With the limit at 0 nothing changes.
+The tooltip (title "System stats") lists the stats switched on for the panel, including ones the limit
+hid from the strip, but not stats you switched off. With the limit at 0 nothing changes.
 
 **The settings say so when the limit is changing what you see.** If the limit currently turns inline
 graphs into behind-text ones, shortens the text, or hides stats (with their graphs), a warning at the
@@ -223,8 +227,14 @@ limit in pixels. A step down only happens once the pointer has gone at least hal
 current layout fits to where the next shorter one fits, so a small nudge never makes the strip jump;
 growing back is immediate once a longer layout fits. The value is saved when you let go (what you see
 is what is saved). Dragging out to the full length means "no
-limit", and double-clicking the handle resets to no limit. Adjust mode switches itself off after
-about 12 seconds without interaction, or untick the menu entry.
+limit", and double-clicking the handle resets to no limit. Adjust mode switches itself off about 12
+seconds after you turn it on or after your last drag (the timer only pauses while you are dragging;
+hovering does not reset it), or untick the menu entry.
+
+## Documentation
+
+Full documentation is in [`docs/`](docs/README.md): a user guide, a settings reference, an architecture
+guide for developers, and a development and release guide.
 
 ## Develop
 
