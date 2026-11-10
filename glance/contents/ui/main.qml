@@ -795,6 +795,7 @@ PlasmoidItem {
     // the value is saved on release. Dragging out to the full length means "no limit".
     property bool adjusting: false           // handle visible
     property bool dragging: false            // handle being dragged
+    property bool dragMoved: false           // the pointer moved since the press (a plain click saves nothing)
     property real dragLength: 0              // strip length under the mouse, px
     // Which edge carries the handle: the edge that is free to move. A widget in the far half of the
     // panel (right half, or bottom half when vertical) is packed toward the end, so the strip grows
@@ -803,6 +804,7 @@ PlasmoidItem {
     // Strip length for a pointer at `pos`, given where the drag started. With the handle on the
     // start edge, moving the pointer toward the start makes the strip longer, so the sign flips.
     function dragTo(startLength, startPos, pos) {
+        dragMoved = true
         dragLength = startLength + (handleAtStart ? -1 : 1) * (pos - startPos)
         dragStep()
     }
@@ -832,6 +834,7 @@ PlasmoidItem {
         for (var i = 0; i < cfgs.length; ++i)
             if (cfgs[i].level === cur.level && cfgs[i].drop === cur.drop) { dragCfg = i; break }
         dragLength = startLength
+        dragMoved = false
         dragging = true
     }
     // Growing is immediate: as soon as a longer layout fits, it is shown. Shrinking is deliberate:
@@ -861,8 +864,9 @@ PlasmoidItem {
         if (!dragging) return
         var v = dragMax()
         dragging = false
-        Plasmoid.configuration.maxLength = v
+        if (dragMoved) Plasmoid.configuration.maxLength = v     // a plain click leaves the saved length alone
     }
+    function cancelDrag() { dragging = false }                  // a cancelled press saves nothing
     function resetLength() {
         dragging = false
         Plasmoid.configuration.maxLength = 0
@@ -1115,7 +1119,7 @@ PlasmoidItem {
                     if (pressed) root.dragTo(startLength, startPos, pointerPos(mouse))
                 }
                 onReleased: root.finishDrag()
-                onCanceled: root.finishDrag()
+                onCanceled: root.cancelDrag()
                 onDoubleClicked: root.resetLength()
             }
         }
