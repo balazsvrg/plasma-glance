@@ -464,9 +464,14 @@ function popupFlagNames(m) {
 }
 // Whether the stat has anything in the popup: its popup flag, or an option that shows a row (temperature), and
 // the hardware check the descriptor names.
+// Whether the hardware a stat's popup needs (popup.available) exists.
+function popupAvailable(m, flags) {
+    var a = m.popup.available
+    return !a || !!(flags.available && flags.available[a])
+}
 function popupOn(m, flags) {
     var p = m.popup
-    if (p.available && !(flags.available && flags.available[p.available])) return false
+    if (!popupAvailable(m, flags)) return false
     if (flags.popup) return true
     var names = popupFlagNames(m)
     for (var i = 0; i < names.length; ++i) if (flagOn(names[i], flags)) return true

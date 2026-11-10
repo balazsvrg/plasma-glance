@@ -90,9 +90,6 @@ KCM.SimpleKCM {
 
     // Detected hardware, written by the widget; read live (no cfg_ property, so the dialog never writes them back).
     readonly property int batteryCount: Plasmoid.configuration.batteryCount
-    readonly property int fanCount: Plasmoid.configuration.fanCount
-    readonly property bool hasBat: batteryCount > 0
-    readonly property bool hasFan: fanCount > 0
     // A stat that needs hardware is available when the widget found at least one device (its hidden count key).
     function rowAvailable(id) {
         var k = M.hardwareKey(id)
@@ -413,7 +410,7 @@ KCM.SimpleKCM {
         }
 
         CfgCheckLabelled {
-            visible: page.hasFan
+            visible: page.rowAvailable("fan")
             Layout.topMargin: Kirigami.Units.largeSpacing
             key: "fanAnimate"
             text: i18n("Animate fan icon based on fan speed")

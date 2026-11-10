@@ -76,7 +76,6 @@ PlasmoidItem {
             if (t && isNum(sensorValue(M.METRICS[i].id, t))) stepPeak(M.METRICS[i].id)
         }
     }
-    readonly property var coreCount: sensorValue("temp", "coreCount")
     function sensorOf(id, name) { return sensorItems[id + "." + name] || null }
     function sensorValue(id, name) {
         var s = sensorOf(id, name)
@@ -697,7 +696,7 @@ PlasmoidItem {
     function statPopupOn(id) {
         var m = M.byId(id)
         if (!m || !Plasmoid.configuration[m.keys.popup]) return false
-        return id === "bat" ? hasBattery : (id === "fan" ? hasFan : true)
+        return M.popupAvailable(m, popupFlags(id))
     }
     function shownIds() {
         var ids = []
@@ -1294,8 +1293,7 @@ PlasmoidItem {
         return ids
     }
     function anyPopupShown() {
-        for (var i = 0; i < statOrder.length; ++i) if (popupShown(statOrder[i])) return true
-        return false
+        return popupIds().length > 0
     }
 
     // One row: a name, then a bold value.
@@ -1445,8 +1443,10 @@ PlasmoidItem {
         required property string statId
         readonly property var spec: M.byId(statId).popup.repeat
         // No lines (and so no sensors) unless the stat has them and their flag is on.
+        // The number of items comes from the sensor the registry names (spec.countSensor) of this stat.
+        readonly property var itemCount: spec ? root.sensorValue(statId, spec.countSensor) : undefined
         readonly property bool on: !!spec && M.flagOn(spec.when, root.popupFlags(statId))
-        readonly property int count: on && root.isNum(root.coreCount) ? Number(root.coreCount) : 0
+        readonly property int count: on && root.isNum(rep.itemCount) ? Number(rep.itemCount) : 0
         visible: count > 0
         PlasmaComponents.Label {
             Layout.topMargin: Kirigami.Units.smallSpacing

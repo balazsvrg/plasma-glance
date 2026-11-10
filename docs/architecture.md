@@ -758,7 +758,8 @@ settings. Everything else (strip layout, tooltip, `syncLengthInfo`, `configs()`,
    calls `stepPeak("x")` from its own change handler, as the fan does) and add its case to `statVals` if it is not
    a plain sensor.
 5. `main.qml`, ordering and flags: add the id to `defaultOrder`, a case to `statShown` (use the
-   hardware-checked property), and, for a hardware-dependent stat, to `statPopupOn`.
+   hardware-checked property). `statPopupOn` takes the hardware rule from the registry
+   (`popup.available`, through `M.popupAvailable`), so it needs no change.
 6. `Metrics.js` and `main.qml`, panel text and widths: add the stat's entry to `METRICS` (and its id to
    `DEFAULT_ORDER`): `panel.full`, `panel.compact`, `panel.vertical` (caption first), `panel.verticalCompact`
    when the vertical value has a shorter form (that alone makes `statCompact` consider it), `panel.sample` (the

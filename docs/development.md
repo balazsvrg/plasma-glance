@@ -335,6 +335,11 @@ Uninstalling removes the package but not the saved settings in your Plasma confi
 
 ## Known limitations
 
+- **Stat names and popup labels are not translated.** The registry (`Metrics.js`, a `.pragma library`) holds
+  plain English names and labels and cannot call `i18n`. Since the settings pages and the maximum-length
+  notice take the stat names from it, those names, which used to go through `i18n`, now appear in English
+  in every locale. Accepted for now. A later improvement could translate them in the QML callers
+  (for example `i18n(M.statName(id))`, with the strings extracted from the registry).
 - **No real mouse injection.** Nothing in this environment can inject mouse events (no `ydotool` or
   `xdotool`, and `/dev/uinput` is not accessible). The real `MouseArea` handlers, including the
   maximum-length drag handle, are tested only by hand by the maintainer. Drive the state functions with

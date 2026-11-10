@@ -661,6 +661,13 @@ check("configMetrics builds its rows from the registry", "M.settingsRows()" in C
 check("configMetrics has no hand-written stat list", 'id: "cpu"' not in CFG_QML)
 check("LengthNotice names stats through the registry", "M.statName(" in NOTICE_QML and "function statName" not in NOTICE_QML)
 
+# ---- review fixes P3-P5: no per-stat hardware ids or sensors in generic code ----
+equal("popupAvailable follows popup.available", run(M, "[popupAvailable(byId('fan'),{available:{hasFan:true}}),popupAvailable(byId('fan'),{available:{hasFan:false}}),popupAvailable(byId('fan'),{}),popupAvailable(byId('cpu'),{})]"), [True, False, False, True])
+check("statPopupOn reads the registry's availability", "M.popupAvailable(m, popupFlags(id))" in MAIN_QML and 'id === "bat" ? hasBattery' not in MAIN_QML)
+check("anyPopupShown reuses popupIds", "return popupIds().length > 0" in MAIN_QML)
+check("RepeatBlock counts items with the registry's countSensor", "root.sensorValue(statId, spec.countSensor)" in MAIN_QML and "root.coreCount" not in MAIN_QML)
+check("configMetrics has one availability rule", "page.hasFan" not in CFG_QML and "hasBat" not in CFG_QML)
+
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))
 if failures:
