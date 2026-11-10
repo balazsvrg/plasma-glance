@@ -54,6 +54,20 @@
             <min>0</min>
             <max>5000</max>
         </entry>
+        <entry name="lengthLevel" type="Int">
+            <label>Written by the widget: compaction step the maximum length currently forces (0 = none)</label>
+            <default>0</default>
+            <min>0</min>
+            <max>3</max>
+        </entry>
+        <entry name="lengthDropped" type="String">
+            <label>Written by the widget: comma-separated stats hidden by the maximum length</label>
+            <default></default>
+        </entry>
+        <entry name="lengthInlineOff" type="Bool">
+            <label>Written by the widget: inline graphs currently shown behind the text because of the maximum length</label>
+            <default>false</default>
+        </entry>
         <entry name="useFahrenheit" type="Bool">
             <label>Show temperature in Fahrenheit</label>
             <default>false</default>

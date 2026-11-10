@@ -741,6 +741,28 @@ PlasmoidItem {
     // Leave adjust mode on its own after a while without interaction.
     Timer { interval: 12000; running: root.adjusting && !root.dragging; onTriggered: root.adjusting = false }
 
+    // Tell the settings pages what the maximum length is currently doing, so they can say so.
+    // They read these live from the configuration; nothing is written while the handle is dragged.
+    function syncLengthInfo() {
+        if (dragging) return
+        // Work from `fit` directly: properties derived from it (droppedIds) may not have updated yet
+        // at the moment fit's change handler runs.
+        var ids = shownIds()
+        var keep = ids.length - fit.drop
+        var graphVisible = false
+        for (var i = 0; i < keep; ++i) if (statGraph(ids[i])) graphVisible = true
+        var inlineOff = fit.level >= 1 && graphInline && graphVisible
+        var dropped = ids.slice(keep).join(",")
+        var cfg = Plasmoid.configuration
+        if (cfg.lengthLevel !== fit.level) cfg.lengthLevel = fit.level
+        if (cfg.lengthDropped !== dropped) cfg.lengthDropped = dropped
+        if (cfg.lengthInlineOff !== inlineOff) cfg.lengthInlineOff = inlineOff
+    }
+    // Run after the current round of binding updates has settled.
+    onFitChanged: Qt.callLater(syncLengthInfo)
+    onDraggingChanged: Qt.callLater(syncLengthInfo)
+    Component.onCompleted: Qt.callLater(syncLengthInfo)
+
     function cellShown(id) { return statShown(id) && droppedIds.indexOf(id) < 0 }
     function anyCellBefore(id) {
         for (var i = 0; i < statOrder.length && statOrder[i] !== id; ++i)

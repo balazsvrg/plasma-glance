@@ -3,6 +3,7 @@ import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
+import org.kde.plasma.plasmoid
 
 // One row per stat: shown in the panel strip and/or the click-open popup, and whether
 // each of those places gets a graph.
@@ -106,6 +107,35 @@ KCM.SimpleKCM {
             = fanPopupGraph.checked = on
     }
 
+    // Is this stat currently hidden by the maximum length? (read live from the widget's state)
+    function hiddenByLength(id) {
+        var d = Plasmoid.configuration.lengthDropped
+        return Plasmoid.configuration.maxLength > 0 && d !== "" && String(d).split(",").indexOf(id) >= 0
+    }
+    // A stat's name, with a marker when the maximum length is hiding it in the panel.
+    component StatName: RowLayout {
+        id: sn
+        property string name
+        property string statId
+        spacing: Kirigami.Units.smallSpacing
+        QQC2.Label { text: sn.name }
+        Kirigami.Icon {
+            visible: page.hiddenByLength(sn.statId)
+            source: "dialog-warning"
+            implicitWidth: Kirigami.Units.iconSizes.small
+            implicitHeight: Kirigami.Units.iconSizes.small
+        }
+        QQC2.Label {
+            visible: page.hiddenByLength(sn.statId)
+            text: i18n("hidden by the maximum length")
+            font.italic: true
+            color: Kirigami.Theme.neutralTextColor
+        }
+    }
+
+    ColumnLayout {
+    LengthNotice { }
+
     GridLayout {
         columns: 5
         columnSpacing: Kirigami.Units.gridUnit * 1.5
@@ -122,19 +152,19 @@ KCM.SimpleKCM {
         QQC2.Label { text: i18n("Show"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
         QQC2.Label { text: i18n("Graph"); opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
 
-        QQC2.Label { text: i18n("CPU usage") }
+        StatName { name: i18n("CPU usage"); statId: "cpu" }
         QQC2.CheckBox { id: cpuPanel; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: cpuPanelGraph; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: cpuPopup; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: cpuPopupGraph; Layout.alignment: Qt.AlignHCenter }
 
-        QQC2.Label { text: i18n("Memory") }
+        StatName { name: i18n("Memory"); statId: "ram" }
         QQC2.CheckBox { id: ramPanel; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: ramPanelGraph; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: ramPopup; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: ramPopupGraph; Layout.alignment: Qt.AlignHCenter }
 
-        QQC2.Label { text: i18n("CPU temperature") }
+        StatName { name: i18n("CPU temperature"); statId: "temp" }
         QQC2.CheckBox { id: tempPanel; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: tempPanelGraph; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: tempPopup; Layout.alignment: Qt.AlignHCenter }
@@ -152,27 +182,27 @@ KCM.SimpleKCM {
         QQC2.CheckBox { id: coresPopup; Layout.alignment: Qt.AlignHCenter }
         Item { }
 
-        QQC2.Label { text: i18n("CPU frequency") }
+        StatName { name: i18n("CPU frequency"); statId: "freq" }
         QQC2.CheckBox { id: freqPanel; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: freqPanelGraph; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: freqPopup; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: freqPopupGraph; Layout.alignment: Qt.AlignHCenter }
 
-        QQC2.Label { text: i18n("Network speed") }
+        StatName { name: i18n("Network speed"); statId: "net" }
         QQC2.CheckBox { id: netPanel; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: netPanelGraph; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: netPopup; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: netPopupGraph; Layout.alignment: Qt.AlignHCenter }
 
         // Only shown on machines where the widget found a battery.
-        QQC2.Label { text: i18n("Battery"); visible: page.hasBat }
+        StatName { name: i18n("Battery"); statId: "bat"; visible: page.hasBat }
         QQC2.CheckBox { id: batPanel; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: batPanelGraph; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: batPopup; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: batPopupGraph; visible: page.hasBat; Layout.alignment: Qt.AlignHCenter }
 
         // Only shown on machines where the widget found a fan sensor.
-        QQC2.Label { text: i18n("Fan speed"); visible: page.hasFan }
+        StatName { name: i18n("Fan speed"); statId: "fan"; visible: page.hasFan }
         QQC2.CheckBox { id: fanPanel; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: fanPanelGraph; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: fanPopup; visible: page.hasFan; Layout.alignment: Qt.AlignHCenter }
@@ -226,5 +256,6 @@ KCM.SimpleKCM {
             property: "currentIndex"
             value: page.cfg_batSeparate ? 1 : 0
         }
+    }
     }
 }

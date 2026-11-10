@@ -20,7 +20,12 @@ KCM.SimpleKCM {
     property int cfg_refreshMsDefault
     property int cfg_maxLengthDefault
 
+    ColumnLayout {
+    // Full width at the top, like on the Metrics tab (a form's field column would squeeze it).
+    LengthNotice { }
+
     Kirigami.FormLayout {
+        Layout.fillWidth: true
         QQC2.ComboBox {
             id: unitBox
             Kirigami.FormData.label: i18n("Temperature unit:")
@@ -77,5 +82,6 @@ KCM.SimpleKCM {
             to: 10000
             stepSize: 250
         }
+    }
     }
 }
