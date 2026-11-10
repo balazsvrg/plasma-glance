@@ -9,11 +9,9 @@ KCM.SimpleKCM {
 
     // Bound by Plasma to the "Graphs" entries in contents/config/main.xml.
     property int cfg_panelGraphStyle
-    property alias cfg_popupGraphs: popupGraphs.checked
     property int cfg_historySeconds
 
     property int cfg_panelGraphStyleDefault
-    property bool cfg_popupGraphsDefault
     property int cfg_historySecondsDefault
 
     // Index of the preset (30 s, 1 min, 5 min) closest to a stored value, so a
@@ -31,21 +29,15 @@ KCM.SimpleKCM {
     Kirigami.FormLayout {
         QQC2.ComboBox {
             id: styleBox
-            Kirigami.FormData.label: i18n("Panel graphs:")
-            model: [i18n("Off"), i18n("Behind text"), i18n("Inline")]
-            onActivated: page.cfg_panelGraphStyle = currentIndex
+            Kirigami.FormData.label: i18n("Panel graph style:")
+            model: [i18n("Behind text"), i18n("Inline")]
+            onActivated: page.cfg_panelGraphStyle = currentIndex + 1     // stored as 1 or 2
         }
         // Binding survives user input, so "Defaults" keeps updating the box.
         Binding {
             target: styleBox
             property: "currentIndex"
-            value: page.cfg_panelGraphStyle
-        }
-
-        QQC2.CheckBox {
-            id: popupGraphs
-            Kirigami.FormData.label: i18n("Popup graphs:")
-            text: i18n("Show a graph under each popup item")
+            value: page.cfg_panelGraphStyle === 2 ? 1 : 0                // an old 0 shows as "Behind text"
         }
 
         Item { Kirigami.FormData.isSection: true }

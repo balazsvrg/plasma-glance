@@ -11,7 +11,7 @@ CPU 4%  |  RAM 30%  |  35°C
 - Vertical panels: three captioned blocks (`CPU` over `4%`), text shrinks to fit.
 - Click for a popup with used / total memory, average and max temperature, and a per-core
   temperature list (one entry per KDE core sensor; hyperthreads of one physical core read alike).
-- Optional line graphs of all three stats, in the panel (behind text or inline)
+- Optional line graphs, switchable per stat, in the panel (behind text or inline)
   and in the popup. Off by default.
 - Each temperature turns red when it reaches the configurable threshold.
 - Pure QML. No native code, no background processes: values come from KDE's own
@@ -48,7 +48,9 @@ Right-click the widget in the panel and choose **Configure…**. There are three
 | Warning threshold (always entered in °C) | 80 |
 | Refresh interval | 1000 ms (min 250) |
 
-**Metrics**: one row per stat, with a *Panel* and a *Popup* checkbox each.
+**Metrics**: one row per stat. Each stat has four checkboxes: whether it is **shown** in the
+panel and in the popup, and whether each of those gets a **graph**. An *All graphs* row turns
+every graph on or off in one click. Graphs are off by default.
 
 | Stat | Panel | Popup |
 |---|---|---|
@@ -80,12 +82,11 @@ On a laptop with **several batteries**, the Metrics tab also offers *Popup batte
 percentage, with ↑ while charging and ↓ while discharging, and turns red below 15% unless
 charging. The popup shows energy held, state and the time estimate (to full, or left).
 
-**Graphs**
+**Graphs** (which stats get a graph is chosen in the Metrics tab)
 
 | Setting | Default |
 |---|---|
-| Panel graphs: Off / Behind text / Inline | Off |
-| Show a graph under each enabled popup item | off |
+| Panel graph style: Behind text / Inline | Behind text |
 | History length: 30 s / 1 min / 5 min | 1 min |
 
 Graph history is collected only for stats that a graph shows, and starts once that stat's

@@ -211,12 +211,25 @@ PlasmoidItem {
     // Each stat has its own history. It is collected only while a graph that
     // shows that stat is enabled, and it starts once the stat's sensor has
     // reported a real number (so the history never begins with fake zeros).
-    readonly property int styleOff: 0
     readonly property int styleBehind: 1
-    readonly property int styleInline: 2   // keep in sync with the dropdown order in configGraphs.qml
+    readonly property int styleInline: 2   // keep in sync with the dropdown in configGraphs.qml
     readonly property int panelGraphStyle: Plasmoid.configuration.panelGraphStyle
-    readonly property bool popupGraphs: Plasmoid.configuration.popupGraphs
-    readonly property bool panelGraphs: panelGraphStyle !== styleOff
+    readonly property bool graphInline: panelGraphStyle === styleInline   // anything else (incl. an old 0) is "behind"
+    // Which stats get a graph: gp* in the panel, gd* in the popup (Metrics tab).
+    readonly property bool gpCpu:  Plasmoid.configuration.graphPanelCpu
+    readonly property bool gpRam:  Plasmoid.configuration.graphPanelRam
+    readonly property bool gpTemp: Plasmoid.configuration.graphPanelTemp
+    readonly property bool gpFreq: Plasmoid.configuration.graphPanelFreq
+    readonly property bool gpNet:  Plasmoid.configuration.graphPanelNet
+    readonly property bool gpBat:  Plasmoid.configuration.graphPanelBat
+    readonly property bool gpFan:  Plasmoid.configuration.graphPanelFan
+    readonly property bool gdCpu:  Plasmoid.configuration.graphPopupCpu
+    readonly property bool gdRam:  Plasmoid.configuration.graphPopupRam
+    readonly property bool gdTemp: Plasmoid.configuration.graphPopupTemp
+    readonly property bool gdFreq: Plasmoid.configuration.graphPopupFreq
+    readonly property bool gdNet:  Plasmoid.configuration.graphPopupNet
+    readonly property bool gdBat:  Plasmoid.configuration.graphPopupBat
+    readonly property bool gdFan:  Plasmoid.configuration.graphPopupFan
     readonly property int historySeconds: Math.min(300, Math.max(30, Plasmoid.configuration.historySeconds))
     readonly property int historyLen: Math.max(2, Math.round(historySeconds * 1000 / refreshMs))
     readonly property real tempYMin: 20                               // temperature graph scale: tempYMin .. tempYMax
@@ -246,14 +259,14 @@ PlasmoidItem {
         }
     }
 
-    History { id: cpuHistory;  sensor: cpuUsage;  wanted: (root.panelGraphs && root.showCpu)  || (root.popupGraphs && root.popupCpu) }
-    History { id: ramHistory;  sensor: memPercent; wanted: (root.panelGraphs && root.showRam)  || (root.popupGraphs && root.popupMemory) }
-    History { id: tempHistory; sensor: tempAvg;   wanted: (root.panelGraphs && root.showTemp) || (root.popupGraphs && root.popupTempAvg) }
-    History { id: freqHistory; sensor: freqAvg;   wanted: (root.panelGraphs && root.showFreq) || (root.popupGraphs && root.popupFreq) }
-    History { id: netDownHistory; sensor: netDown; wanted: (root.panelGraphs && root.showNet) || (root.popupGraphs && root.popupNet) }
-    History { id: netUpHistory;   sensor: netUp;   wanted: (root.panelGraphs && root.showNet) || (root.popupGraphs && root.popupNet) }
-    History { id: fanHistory;     sensor: fanSensor; wanted: (root.panelGraphs && root.fanShown) || (root.popupGraphs && root.popupFanShown) }
-    History { id: batHistory;     sensor: batSensor; wanted: (root.panelGraphs && root.batShown) || (root.popupGraphs && root.popupBatShown) }
+    History { id: cpuHistory;  sensor: cpuUsage;  wanted: (root.gpCpu && root.showCpu)  || (root.gdCpu && root.popupCpu) }
+    History { id: ramHistory;  sensor: memPercent; wanted: (root.gpRam && root.showRam)  || (root.gdRam && root.popupMemory) }
+    History { id: tempHistory; sensor: tempAvg;   wanted: (root.gpTemp && root.showTemp) || (root.gdTemp && root.popupTempAvg) }
+    History { id: freqHistory; sensor: freqAvg;   wanted: (root.gpFreq && root.showFreq) || (root.gdFreq && root.popupFreq) }
+    History { id: netDownHistory; sensor: netDown; wanted: (root.gpNet && root.showNet) || (root.gdNet && root.popupNet) }
+    History { id: netUpHistory;   sensor: netUp;   wanted: (root.gpNet && root.showNet) || (root.gdNet && root.popupNet) }
+    History { id: fanHistory;     sensor: fanSensor; wanted: (root.gpFan && root.fanShown) || (root.gdFan && root.popupFanShown) }
+    History { id: batHistory;     sensor: batSensor; wanted: (root.gpBat && root.batShown) || (root.gdBat && root.popupBatShown) }
 
     readonly property var cpuHist:  cpuHistory.historySource
     readonly property var ramHist:  ramHistory.historySource
@@ -534,9 +547,10 @@ PlasmoidItem {
             property real yTo: 100
             property color lineColor: Kirigami.Theme.highlightColor
 
-            readonly property bool hasGraph: root.panelGraphs && history !== null
-            readonly property bool behind: hasGraph && root.panelGraphStyle === root.styleBehind
-            readonly property bool inline: hasGraph && root.panelGraphStyle === root.styleInline
+            property bool graphOn: false             // this stat's panel graph toggle
+            readonly property bool hasGraph: graphOn && history !== null
+            readonly property bool behind: hasGraph && !root.graphInline
+            readonly property bool inline: hasGraph && root.graphInline
 
             implicitWidth: content.implicitWidth
             implicitHeight: content.implicitHeight
@@ -609,6 +623,7 @@ PlasmoidItem {
                 hPrefix: "CPU "
                 valueText: root.pct(cpuUsage.value)
                 minLabelWidth: cpuMetrics.width
+                graphOn: root.gpCpu
                 history: root.cpuHist
             }
             Divider { visible: root.showRam && root.showCpu }
@@ -621,6 +636,7 @@ PlasmoidItem {
                 hPrefix: "RAM "
                 valueText: root.pct(memPercent.value)
                 minLabelWidth: ramMetrics.width
+                graphOn: root.gpRam
                 history: root.ramHist
             }
             Divider { visible: root.showTemp && (root.showCpu || root.showRam) }
@@ -633,6 +649,7 @@ PlasmoidItem {
                 valueText: root.temp(tempAvg.value)
                 minLabelWidth: tempMetrics.width
                 textColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                graphOn: root.gpTemp
                 history: root.tempHist
                 yFrom: root.tempYMin
                 yTo: root.tempYMax
@@ -647,6 +664,7 @@ PlasmoidItem {
                 caption: "Freq"
                 valueText: root.freq(freqAvg.value)
                 minLabelWidth: freqMetrics.width
+                graphOn: root.gpFreq
                 history: root.freqHist
                 yTo: root.freqPeak
             }
@@ -660,6 +678,7 @@ PlasmoidItem {
                 valueText: root.netText()
                 vValueText: "↓" + root.rateShort(netDown.value) + "\n↑" + root.rateShort(netUp.value)
                 minLabelWidth: netMetrics.width
+                graphOn: root.gpNet
                 history: root.netDownHist
                 history2: root.netUpHist
                 yTo: root.netPeak
@@ -675,6 +694,7 @@ PlasmoidItem {
                 valueText: root.batText()
                 minLabelWidth: batMetrics.width
                 textColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                graphOn: root.gpBat
                 history: root.batHist
                 lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
             }
@@ -690,6 +710,7 @@ PlasmoidItem {
                 minLabelWidth: fanMetrics.width
                 fan: true
                 fanLevel: root.fanLevel
+                graphOn: root.gpFan
                 history: root.fanHist
                 yTo: root.fanPeak
             }
@@ -710,11 +731,11 @@ PlasmoidItem {
         PlasmaComponents.Label { visible: root.popupCpu; text: root.pct(cpuUsage.value); font.bold: true }
 
         Spark {
-            visible: root.popupGraphs && root.popupCpu && root.cpuHist !== null
+            visible: root.gdCpu && root.popupCpu && root.cpuHist !== null
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.popupGraphs && root.popupCpu) ? root.cpuHist : null
+            history: (root.gdCpu && root.popupCpu) ? root.cpuHist : null
         }
 
         PlasmaComponents.Label { visible: root.popupMemory; text: "Memory" }
@@ -726,11 +747,11 @@ PlasmoidItem {
         }
 
         Spark {
-            visible: root.popupGraphs && root.popupMemory && root.ramHist !== null
+            visible: root.gdRam && root.popupMemory && root.ramHist !== null
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.popupGraphs && root.popupMemory) ? root.ramHist : null
+            history: (root.gdRam && root.popupMemory) ? root.ramHist : null
         }
 
         PlasmaComponents.Label { visible: root.popupFreq; text: "CPU frequency" }
@@ -744,11 +765,11 @@ PlasmoidItem {
         }
 
         Spark {
-            visible: root.popupGraphs && root.popupFreq && root.freqHist !== null
+            visible: root.gdFreq && root.popupFreq && root.freqHist !== null
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.popupGraphs && root.popupFreq) ? root.freqHist : null
+            history: (root.gdFreq && root.popupFreq) ? root.freqHist : null
             yTo: root.freqPeak
         }
 
@@ -767,12 +788,12 @@ PlasmoidItem {
         }
 
         Spark {
-            visible: root.popupGraphs && root.popupNet && root.netDownHist !== null
+            visible: root.gdNet && root.popupNet && root.netDownHist !== null
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.popupGraphs && root.popupNet) ? root.netDownHist : null
-            history2: (root.popupGraphs && root.popupNet) ? root.netUpHist : null
+            history: (root.gdNet && root.popupNet) ? root.netDownHist : null
+            history2: (root.gdNet && root.popupNet) ? root.netUpHist : null
             yTo: root.netPeak
         }
 
@@ -807,11 +828,11 @@ PlasmoidItem {
         }
 
         Spark {
-            visible: root.popupGraphs && root.popupBatShown && root.batHist !== null
+            visible: root.gdBat && root.popupBatShown && root.batHist !== null
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.popupGraphs && root.popupBatShown) ? root.batHist : null
+            history: (root.gdBat && root.popupBatShown) ? root.batHist : null
             lineColor: root.batLow ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
         }
 
@@ -827,11 +848,11 @@ PlasmoidItem {
         }
 
         Spark {
-            visible: root.popupGraphs && root.popupFanShown && root.fanHist !== null
+            visible: root.gdFan && root.popupFanShown && root.fanHist !== null
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.popupGraphs && root.popupFanShown) ? root.fanHist : null
+            history: (root.gdFan && root.popupFanShown) ? root.fanHist : null
             yTo: root.fanPeak
         }
 
@@ -844,11 +865,11 @@ PlasmoidItem {
         }
 
         Spark {
-            visible: root.popupGraphs && root.popupTempAvg && root.tempHist !== null
+            visible: root.gdTemp && root.popupTempAvg && root.tempHist !== null
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-            history: (root.popupGraphs && root.popupTempAvg) ? root.tempHist : null
+            history: (root.gdTemp && root.popupTempAvg) ? root.tempHist : null
             yFrom: root.tempYMin
             yTo: root.tempYMax
             lineColor: root.avgHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor

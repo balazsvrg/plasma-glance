@@ -109,20 +109,72 @@
     </group>
     <group name="Graphs">
         <entry name="panelGraphStyle" type="Int">
-            <label>Panel graph style: 0 off, 1 behind text, 2 inline after text</label>
-            <default>0</default>
+            <label>Panel graph style: 1 behind text, 2 inline after text (an old 0 behaves like 1)</label>
+            <default>1</default>
             <min>0</min>
             <max>2</max>
-        </entry>
-        <entry name="popupGraphs" type="Bool">
-            <label>Show graphs in the popup</label>
-            <default>false</default>
         </entry>
         <entry name="historySeconds" type="Int">
             <label>Graph history length in seconds</label>
             <default>60</default>
             <min>30</min>
             <max>300</max>
+        </entry>
+        <entry name="graphPanelCpu" type="Bool">
+            <label>Panel: graph for CPU usage</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPanelRam" type="Bool">
+            <label>Panel: graph for memory</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPanelTemp" type="Bool">
+            <label>Panel: graph for CPU temperature</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPanelFreq" type="Bool">
+            <label>Panel: graph for CPU frequency</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPanelNet" type="Bool">
+            <label>Panel: graph for network speed</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPanelBat" type="Bool">
+            <label>Panel: graph for battery</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPanelFan" type="Bool">
+            <label>Panel: graph for fan speed</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPopupCpu" type="Bool">
+            <label>Popup: graph for CPU usage</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPopupRam" type="Bool">
+            <label>Popup: graph for memory</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPopupTemp" type="Bool">
+            <label>Popup: graph for CPU temperature</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPopupFreq" type="Bool">
+            <label>Popup: graph for CPU frequency</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPopupNet" type="Bool">
+            <label>Popup: graph for network speed</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPopupBat" type="Bool">
+            <label>Popup: graph for battery</label>
+            <default>false</default>
+        </entry>
+        <entry name="graphPopupFan" type="Bool">
+            <label>Popup: graph for fan speed</label>
+            <default>false</default>
         </entry>
     </group>
 </kcfg>
