@@ -686,7 +686,10 @@ PlasmoidItem {
     // a digit. One TextMetrics per registry entry and kind; the text is the registry's worst-case sample
     // rendered with the same templates as the panel. (TextMetrics.width, not FontMetrics.advanceWidth: the
     // two differ by a fraction of a pixel, and the strip has always been sized from the former.)
-    property var reserveItems: ({})                       // "<id>" / "<id>C" -> TextMetrics
+    // "<id>" / "<id>C" -> TextMetrics. Empty until the Instantiator below has created its items (the first
+    // evaluations of fit-dependent bindings see width 0 and are re-run). Do not write config synchronously from
+    // such a binding; syncLengthInfo() is deferred with Qt.callLater for this reason.
+    property var reserveItems: ({})
     Instantiator {
         id: reserveInst
         model: root.reserveKinds

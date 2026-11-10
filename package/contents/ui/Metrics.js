@@ -77,7 +77,7 @@ var FORMATS = {
 // Renders "{key:format}" templates. A key missing from vals renders "--"; a format name that does not
 // exist throws (a typo in a descriptor must not turn into silent text). A template is split into its parts
 // once and kept (the panel renders the same few templates on every sensor update).
-var PARSED = {}
+var PARSED = Object.create(null)      // no inherited keys, so a template named like an Object method is safe
 function parse(template) {
     var t = String(template), cached = PARSED[t]
     if (cached) return cached
