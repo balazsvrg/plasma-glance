@@ -44,6 +44,7 @@ Right-click the widget in the panel and choose **Configure…**. There are three
 | Setting | Default |
 |---|---|
 | Temperature unit | °C |
+| Network speed unit: bytes (MB/s) or bits (Mb/s) | bytes |
 | Warning threshold (always entered in °C) | 80 |
 | Refresh interval | 1000 ms (min 250) |
 
@@ -53,6 +54,7 @@ Right-click the widget in the panel and choose **Configure…**. There are three
 |---|---|---|
 | CPU usage, memory, CPU temperature | on | on |
 | CPU frequency | off | off |
+| Network speed (all interfaces combined) | off | off |
 | Hottest core, per-core temperatures | n/a | on |
 
 Turning off per-core temperatures also stops its sensors.
@@ -83,7 +85,8 @@ Sensor IDs used (check with `kstatsviewer --list`):
 `cpu/all/usage`, `memory/physical/usedPercent`, `memory/physical/used`,
 `memory/physical/total`, `cpu/all/averageTemperature`, `cpu/all/maximumTemperature`,
 `cpu/all/coreCount`, `cpu/cpuN/temperature`,
-`cpu/all/averageFrequency`, `cpu/all/minimumFrequency`, `cpu/all/maximumFrequency`.
+`cpu/all/averageFrequency`, `cpu/all/minimumFrequency`, `cpu/all/maximumFrequency`,
+`network/all/download`, `network/all/upload`, `network/all/totalDownload`, `network/all/totalUpload`.
 Graphs use KDE Quick Charts (`org.kde.quickcharts`: `LineChart`, `HistoryProxySource`).
 
 ## Layout

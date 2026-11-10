@@ -9,10 +9,12 @@ KCM.SimpleKCM {
 
     // Plasma binds these to the entries in contents/config/main.xml.
     property bool cfg_useFahrenheit
+    property bool cfg_netBits
     property alias cfg_warnTemp: warnTemp.value
     property alias cfg_refreshMs: refreshMs.value
 
     property bool cfg_useFahrenheitDefault
+    property bool cfg_netBitsDefault
     property int cfg_warnTempDefault
     property int cfg_refreshMsDefault
 
@@ -29,6 +31,18 @@ KCM.SimpleKCM {
             target: unitBox
             property: "currentIndex"
             value: page.cfg_useFahrenheit ? 1 : 0
+        }
+
+        QQC2.ComboBox {
+            id: netUnitBox
+            Kirigami.FormData.label: i18n("Network speed unit:")
+            model: [i18n("Bytes per second (MB/s)"), i18n("Bits per second (Mb/s)")]
+            onActivated: page.cfg_netBits = (currentIndex === 1)
+        }
+        Binding {
+            target: netUnitBox
+            property: "currentIndex"
+            value: page.cfg_netBits ? 1 : 0
         }
 
         QQC2.SpinBox {

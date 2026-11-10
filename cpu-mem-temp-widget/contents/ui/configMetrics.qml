@@ -19,6 +19,8 @@ KCM.SimpleKCM {
     property alias cfg_popupCores: coresPopup.checked
     property alias cfg_showFreq: freqPanel.checked
     property alias cfg_popupFreq: freqPopup.checked
+    property alias cfg_showNet: netPanel.checked
+    property alias cfg_popupNet: netPopup.checked
 
     property bool cfg_showCpuDefault
     property bool cfg_popupCpuDefault
@@ -30,6 +32,8 @@ KCM.SimpleKCM {
     property bool cfg_popupCoresDefault
     property bool cfg_showFreqDefault
     property bool cfg_popupFreqDefault
+    property bool cfg_showNetDefault
+    property bool cfg_popupNetDefault
 
     GridLayout {
         columns: 3
@@ -63,5 +67,9 @@ KCM.SimpleKCM {
         QQC2.Label { text: i18n("CPU frequency") }
         QQC2.CheckBox { id: freqPanel; Layout.alignment: Qt.AlignHCenter }
         QQC2.CheckBox { id: freqPopup; Layout.alignment: Qt.AlignHCenter }
+
+        QQC2.Label { text: i18n("Network speed") }
+        QQC2.CheckBox { id: netPanel; Layout.alignment: Qt.AlignHCenter }
+        QQC2.CheckBox { id: netPopup; Layout.alignment: Qt.AlignHCenter }
     }
 }

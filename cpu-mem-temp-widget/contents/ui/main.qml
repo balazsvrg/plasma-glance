@@ -17,6 +17,8 @@ PlasmoidItem {
     readonly property bool showRam: Plasmoid.configuration.showRam
     readonly property bool showTemp: Plasmoid.configuration.showTemp
     readonly property bool showFreq: Plasmoid.configuration.showFreq
+    readonly property bool showNet: Plasmoid.configuration.showNet
+    readonly property bool netBits: Plasmoid.configuration.netBits
     readonly property bool useF: Plasmoid.configuration.useFahrenheit
     readonly property bool popupCpu: Plasmoid.configuration.popupCpu
     readonly property bool popupMemory: Plasmoid.configuration.popupMemory
@@ -24,6 +26,7 @@ PlasmoidItem {
     readonly property bool popupTempMax: Plasmoid.configuration.popupTempMax
     readonly property bool popupCores: Plasmoid.configuration.popupCores
     readonly property bool popupFreq: Plasmoid.configuration.popupFreq
+    readonly property bool popupNet: Plasmoid.configuration.popupNet
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
     Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs }
@@ -43,6 +46,27 @@ PlasmoidItem {
         onValueChanged: if (root.isNum(value) && value > root.freqPeak) root.freqPeak = value
     }
     property real freqPeak: 1000
+    // Network, all interfaces combined (bytes per second; totals in bytes since boot).
+    Sensors.Sensor {
+        id: netDown
+        sensorId: "network/all/download"
+        updateRateLimit: root.refreshMs
+        onValueChanged: root.trackNetPeak(value)
+    }
+    Sensors.Sensor {
+        id: netUp
+        sensorId: "network/all/upload"
+        updateRateLimit: root.refreshMs
+        onValueChanged: root.trackNetPeak(value)
+    }
+    Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs }
+    Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs }
+    // Network graph scale: follows the recent peak and decays slowly, never below 100 KB/s.
+    property real netPeak: 100000
+    function trackNetPeak(v) {
+        if (!isNum(v)) return
+        netPeak = Math.max(100000, Number(v), netPeak * 0.995)
+    }
     // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
     Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount" }
 
@@ -89,22 +113,28 @@ PlasmoidItem {
     History { id: ramHistory;  sensor: memPercent; wanted: (root.panelGraphs && root.showRam)  || (root.popupGraphs && root.popupMemory) }
     History { id: tempHistory; sensor: tempAvg;   wanted: (root.panelGraphs && root.showTemp) || (root.popupGraphs && root.popupTempAvg) }
     History { id: freqHistory; sensor: freqAvg;   wanted: (root.panelGraphs && root.showFreq) || (root.popupGraphs && root.popupFreq) }
+    History { id: netDownHistory; sensor: netDown; wanted: (root.panelGraphs && root.showNet) || (root.popupGraphs && root.popupNet) }
+    History { id: netUpHistory;   sensor: netUp;   wanted: (root.panelGraphs && root.showNet) || (root.popupGraphs && root.popupNet) }
 
     readonly property var cpuHist:  cpuHistory.historySource
     readonly property var ramHist:  ramHistory.historySource
     readonly property var tempHist: tempHistory.historySource
     readonly property var freqHist: freqHistory.historySource
+    readonly property var netDownHist: netDownHistory.historySource
+    readonly property var netUpHist: netUpHistory.historySource
 
     // One small line graph; used by the popup and (next) the panel.
     component Spark: Charts.LineChart {
         id: spark
         property var history: null
+        property var history2: null          // optional second line (e.g. upload)
         property real yFrom: 0
         property real yTo: 100
         property color lineColor: Kirigami.Theme.highlightColor
+        property color lineColor2: Kirigami.Theme.positiveTextColor
 
-        valueSources: history ? [history] : []
-        colorSource: Charts.SingleValueSource { value: spark.lineColor }
+        valueSources: history ? (history2 ? [history, history2] : [history]) : []
+        colorSource: Charts.ArraySource { array: [spark.lineColor, spark.lineColor2] }
         xRange { automatic: true }            // spans the samples collected so far
         yRange { from: spark.yFrom; to: spark.yTo; automatic: false }
         direction: Charts.XYChart.ZeroAtEnd   // newest sample on the right
@@ -126,6 +156,24 @@ PlasmoidItem {
         return Math.round(useF ? v * 9 / 5 + 32 : v) + unit
     }
     function gib(v)   { return isNum(v) ? (v / 1073741824).toFixed(1) + " GiB" : "-- GiB" }
+    // Network rates arrive in bytes/s. Decimal units: 1 KB = 1000 B (bits: x8).
+    function rateParts(v) {
+        var x = netBits ? Number(v) * 8 : Number(v)
+        var units = netBits ? ["b", "Kb", "Mb", "Gb"] : ["B", "KB", "MB", "GB"]
+        var i = 0
+        while (x >= 1000 && i < 3) { x /= 1000; i++ }
+        return { n: (x >= 10 || i === 0) ? String(Math.round(x)) : x.toFixed(1), unit: units[i] }
+    }
+    function rate(v)      { if (!isNum(v)) return "--"; var p = rateParts(v); return p.n + " " + p.unit + "/s" }
+    function rateShort(v) { if (!isNum(v)) return "--"; var p = rateParts(v); return p.n + p.unit.charAt(0) }
+    function netText()      { return "↓" + rate(netDown.value) + " ↑" + rate(netUp.value) }
+    function bytesText(v) {
+        if (!isNum(v)) return "--"
+        var x = Number(v)
+        if (x >= 1e9) return (x / 1e9).toFixed(1) + " GB"
+        if (x >= 1e6) return (x / 1e6).toFixed(1) + " MB"
+        return Math.round(x / 1e3) + " KB"
+    }
     // CPU frequency arrives in MHz; show GHz from 1000 MHz up.
     function ghzNumber(v) { return isNum(v) ? (v / 1000).toFixed(1) : "--" }
     function freq(v) {
@@ -144,6 +192,7 @@ PlasmoidItem {
         if (showRam)  parts.push("RAM " + pct(memPercent.value))
         if (showTemp) parts.push(temp(tempAvg.value))
         if (showFreq) parts.push(freq(freqAvg.value))
+        if (showNet)  parts.push(netText())
         return parts.join(" · ")
     }
 
@@ -169,6 +218,7 @@ PlasmoidItem {
         TextMetrics { id: ramMetrics;  font: Kirigami.Theme.defaultFont; text: "RAM 100%" }
         TextMetrics { id: tempMetrics; font: Kirigami.Theme.defaultFont; text: root.useF ? "212°F" : "100°C" }
         TextMetrics { id: freqMetrics; font: Kirigami.Theme.defaultFont; text: "9.9 GHz" }
+        TextMetrics { id: netMetrics;  font: Kirigami.Theme.defaultFont; text: "↓999 MB/s ↑999 MB/s" }
 
         // Thin divider spanning the full panel thickness (full height on a
         // horizontal panel, full width on a vertical one).
@@ -188,9 +238,11 @@ PlasmoidItem {
             property string caption                 // vertical layout: "CPU" over the value
             property string hPrefix: ""             // horizontal layout: "CPU " before the value
             property string valueText
+            property string vValueText: ""          // optional different text for vertical panels
             property real minLabelWidth: 0
             property color textColor: Kirigami.Theme.textColor
             property var history: null
+            property var history2: null
             property real yFrom: 0
             property real yTo: 100
             property color lineColor: Kirigami.Theme.highlightColor
@@ -207,6 +259,7 @@ PlasmoidItem {
                 anchors.fill: parent
                 opacity: 0.5
                 history: cell.behind ? cell.history : null
+                history2: cell.behind ? cell.history2 : null
                 yFrom: cell.yFrom
                 yTo: cell.yTo
                 lineColor: cell.lineColor
@@ -227,7 +280,7 @@ PlasmoidItem {
                     horizontalAlignment: Text.AlignHCenter
                     fontSizeMode: compact.vertical ? Text.HorizontalFit : Text.FixedSize
                     minimumPixelSize: 8
-                    text: compact.vertical ? cell.caption + "\n" + cell.valueText
+                    text: compact.vertical ? cell.caption + "\n" + (cell.vValueText !== "" ? cell.vValueText : cell.valueText)
                                            : cell.hPrefix + cell.valueText
                     color: cell.textColor
                 }
@@ -238,6 +291,7 @@ PlasmoidItem {
                     Layout.preferredWidth: compact.vertical ? -1 : Kirigami.Units.gridUnit * 4
                     Layout.preferredHeight: Kirigami.Units.gridUnit * (compact.vertical ? 1 : 1.2)
                     history: cell.inline ? cell.history : null
+                    history2: cell.inline ? cell.history2 : null
                     yFrom: cell.yFrom
                     yTo: cell.yTo
                     lineColor: cell.lineColor
@@ -248,7 +302,7 @@ PlasmoidItem {
         GridLayout {
             id: layout
             anchors.fill: parent
-            columns: compact.vertical ? 1 : 7
+            columns: compact.vertical ? 1 : 9
             columnSpacing: Kirigami.Units.largeSpacing
             rowSpacing: Kirigami.Units.smallSpacing
 
@@ -302,8 +356,22 @@ PlasmoidItem {
                 history: root.freqHist
                 yTo: root.freqPeak
             }
+            Divider { visible: root.showNet && (root.showCpu || root.showRam || root.showTemp || root.showFreq) }
+            MetricCell {
+                visible: root.showNet
+                Layout.alignment: Qt.AlignCenter
+                Layout.fillWidth: compact.vertical
+                Layout.fillHeight: !compact.vertical
+                caption: "Net"
+                valueText: root.netText()
+                vValueText: "↓" + root.rateShort(netDown.value) + "\n↑" + root.rateShort(netUp.value)
+                minLabelWidth: netMetrics.width
+                history: root.netDownHist
+                history2: root.netUpHist
+                yTo: root.netPeak
+            }
             PlasmaComponents.Label {
-                visible: !root.showCpu && !root.showRam && !root.showTemp && !root.showFreq
+                visible: !root.showCpu && !root.showRam && !root.showTemp && !root.showFreq && !root.showNet
                 Layout.alignment: Qt.AlignCenter
                 text: "–"
             }
@@ -359,6 +427,30 @@ PlasmoidItem {
             Layout.preferredHeight: Kirigami.Units.gridUnit * 2
             history: (root.popupGraphs && root.popupFreq) ? root.freqHist : null
             yTo: root.freqPeak
+        }
+
+        PlasmaComponents.Label { visible: root.popupNet; text: "Download" }
+        PlasmaComponents.Label {
+            visible: root.popupNet
+            text: root.rate(netDown.value) + "  (" + root.bytesText(netDownTotal.value) + " total)"
+            font.bold: true
+        }
+
+        PlasmaComponents.Label { visible: root.popupNet; text: "Upload" }
+        PlasmaComponents.Label {
+            visible: root.popupNet
+            text: root.rate(netUp.value) + "  (" + root.bytesText(netUpTotal.value) + " total)"
+            font.bold: true
+        }
+
+        Spark {
+            visible: root.popupGraphs && root.popupNet && root.netDownHist !== null
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 2
+            history: (root.popupGraphs && root.popupNet) ? root.netDownHist : null
+            history2: (root.popupGraphs && root.popupNet) ? root.netUpHist : null
+            yTo: root.netPeak
         }
 
         PlasmaComponents.Label { visible: root.popupTempAvg; text: "CPU temp (avg)" }
@@ -438,7 +530,7 @@ PlasmoidItem {
 
         PlasmaComponents.Label {
             visible: !root.popupCpu && !root.popupMemory && !root.popupTempAvg
-                     && !root.popupTempMax && !root.popupCores && !root.popupFreq
+                     && !root.popupTempMax && !root.popupCores && !root.popupFreq && !root.popupNet
             Layout.columnSpan: 2
             text: "Nothing to show. Enable items under Configure > Metrics."
             opacity: 0.7

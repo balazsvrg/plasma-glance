@@ -20,6 +20,14 @@
             <label>Show CPU frequency</label>
             <default>false</default>
         </entry>
+        <entry name="showNet" type="Bool">
+            <label>Show network speed</label>
+            <default>false</default>
+        </entry>
+        <entry name="netBits" type="Bool">
+            <label>Show network speed in bits per second instead of bytes</label>
+            <default>false</default>
+        </entry>
         <entry name="useFahrenheit" type="Bool">
             <label>Show temperature in Fahrenheit</label>
             <default>false</default>
@@ -56,6 +64,10 @@
         </entry>
         <entry name="popupFreq" type="Bool">
             <label>Popup: show CPU frequency</label>
+            <default>false</default>
+        </entry>
+        <entry name="popupNet" type="Bool">
+            <label>Popup: show network speed</label>
             <default>false</default>
         </entry>
         <entry name="popupCores" type="Bool">
