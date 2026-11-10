@@ -82,7 +82,7 @@ This blanks the desktop and panels for a second or two; logging out and back in 
 Your open applications are not affected.
 
 Then right-click the panel, choose **Add Widgets**, search for **CPU / RAM / Temp Monitor** and drag it
-onto the panel. The widget can also sit on the desktop, but it is designed for a panel.
+onto the panel. It is designed for a panel; placing it elsewhere has not been tested.
 
 ### Check it worked
 
