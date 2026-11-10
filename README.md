@@ -3,9 +3,7 @@
 Your machine at a glance: a compact KDE Plasma 6 panel widget that puts CPU usage, memory,
 temperature and more in one strip, with a details popup.
 
-```
-CPU 4%  |  RAM 30%  |  35°C  |  ↓12 KB/s ↑3 KB/s  |  BAT 62% ↑
-```
+![Glance in a Plasma panel: CPU, temperature, memory, frequency, network, fan and battery](docs/images/glance-panel.png)
 
 - **Stats:** CPU usage, memory and CPU temperature by default. CPU frequency, network speed, battery
   and fan speed (with a spinning fan icon) can be switched on. Battery and fan only appear on
@@ -64,7 +62,7 @@ cd plasma-glance
 If you were given a `.plasmoid` file (or built one with `./package.sh`, see below):
 
 ```
-kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.8.1.plasmoid
+kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.8.2.plasmoid
 ```
 
 Use `-u` instead of `-i` to upgrade an installed copy. You can also do it from Plasma: right-click the
@@ -73,7 +71,7 @@ panel, choose **Add Widgets**, then **Get New Widgets > Install from Local File*
 To install it for every user on the machine, add `-g` and run the command as root:
 
 ```
-sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.8.1.plasmoid
+sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.8.2.plasmoid
 ```
 
 ### Then load it into Plasma
@@ -276,6 +274,12 @@ package.sh                      builds the .plasmoid into dist/
 ```
 
 ## Changelog
+
+**0.8.2**
+- First public release. The widget itself is unchanged.
+- The plugin folder is now `package/`, the licence text (GPL-2.0) ships as `LICENSE`, and `metadata.json`
+  carries the author, website and bug-report URL.
+- The README shows the widget in a panel.
 
 **0.8.1**
 - The saved battery count is now refreshed from the first battery reading after the widget loads. A

@@ -9,7 +9,7 @@
         "BugReportUrl": "https://github.com/balazsvrg/plasma-glance/issues",
         "Category": "System Information",
         "License": "GPL-2.0-or-later",
-        "Version": "0.8.1"
+        "Version": "0.8.2"
     },
     "KPackageStructure": "Plasma/Applet",
     "X-Plasma-API-Minimum-Version": "6.0"
