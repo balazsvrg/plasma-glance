@@ -64,7 +64,7 @@ cd plasma-glance
 If you were given a `.plasmoid` file (or built one with `./package.sh`, see below):
 
 ```
-kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.7.plasmoid
+kpackagetool6 -t Plasma/Applet -i org.local.cpumemtemp-0.8.plasmoid
 ```
 
 Use `-u` instead of `-i` to upgrade an installed copy. You can also do it from Plasma: right-click the
@@ -73,7 +73,7 @@ panel, choose **Add Widgets**, then **Get New Widgets > Install from Local File*
 To install it for every user on the machine, add `-g` and run the command as root:
 
 ```
-sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.7.plasmoid
+sudo kpackagetool6 -t Plasma/Applet -g -i org.local.cpumemtemp-0.8.plasmoid
 ```
 
 ### Then load it into Plasma
@@ -266,6 +266,18 @@ package.sh                      builds the .plasmoid into dist/
 ```
 
 ## Changelog
+
+**0.8**
+- CPU frequency is always shown in GHz (`0.8 GHz`), so it no longer spills out of its reserved width when
+  the CPU idles below 1 GHz.
+- A plain click (or a cancelled press) on the maximum-length handle no longer rewrites the saved length;
+  only an actual drag does.
+- The Metrics arrow buttons skip the hidden Battery and Fan rows instead of silently swapping with them, and
+  are disabled at the ends.
+- Network rates never show `1000 KB/s`; they roll over to the next unit.
+- Fan discovery needs two identical scans before it settles, so a second fan chip that appears a moment
+  later is no longer missed.
+- Sensors used only by the popup are read only while the popup is open.
 
 **0.7**
 - Vertical panels: each stat keeps its name above the value, and a value is shortened (`42°C` becomes `42°`,
