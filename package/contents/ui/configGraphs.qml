@@ -9,9 +9,11 @@ KCM.SimpleKCM {
 
     // Bound by Plasma to the "Graphs" entries in contents/config/main.xml.
     property int cfg_panelGraphStyle
+    property int cfg_chartStyle
     property int cfg_historySeconds
 
     property int cfg_panelGraphStyleDefault
+    property int cfg_chartStyleDefault
     property int cfg_historySecondsDefault
 
     // Index of the preset (30 s, 1 min, 5 min) closest to a stored value, so a
@@ -38,6 +40,18 @@ KCM.SimpleKCM {
             target: styleBox
             property: "currentIndex"
             value: page.cfg_panelGraphStyle === 2 ? 1 : 0                // an old 0 shows as "Behind text"
+        }
+
+        QQC2.ComboBox {
+            id: chartBox
+            Kirigami.FormData.label: i18n("Chart style:")
+            model: [i18n("Line"), i18n("Bar")]
+            onActivated: page.cfg_chartStyle = currentIndex + 1          // stored as 1 or 2
+        }
+        Binding {
+            target: chartBox
+            property: "currentIndex"
+            value: page.cfg_chartStyle === 2 ? 1 : 0                     // anything else shows as "Line"
         }
 
         Item { Kirigami.FormData.isSection: true }

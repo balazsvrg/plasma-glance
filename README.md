@@ -9,7 +9,7 @@ temperature and more in one strip, with a details popup.
   and fan speed (with a spinning fan icon) can be switched on. Battery and fan only appear on
   machines that have them.
 - **Yours to arrange:** choose what shows in the panel and in the popup, and drag the stats into
-  the order you want. Optional line graphs can be switched on per stat.
+  the order you want. Optional line or bar graphs can be switched on per stat.
 - **Fits your panel:** set a maximum length (in the settings, or by dragging a handle on the strip)
   and the strip shortens its text, then hides the last stats, instead of growing too long.
 - **Horizontal or vertical panels:** one line with thin dividers, or stacked captioned blocks.
@@ -190,6 +190,7 @@ charging. The popup shows energy held, state and the time estimate (to full, or 
 | Setting | Default |
 |---|---|
 | Panel graph style: Behind text / Inline | Behind text |
+| Chart style: Line / Bar | Line |
 | History length: 30 s / 1 min / 5 min | 1 min |
 
 Graph history is collected only for stats that a graph shows, and starts once that stat's
@@ -255,7 +256,7 @@ Battery data comes from Plasma's power-management engine (`powermanagement`, via
 `org.kde.plasma.plasma5support`), the same source KDE's own battery widget uses. KDE's
 `power/<id>/...` sensors were not used: on one test laptop they lagged behind the kernel
 and disagreed with it. The engine does not report watts, so the popup shows no power draw.
-Graphs use KDE Quick Charts (`org.kde.quickcharts`: `LineChart`, `HistoryProxySource`).
+Graphs use KDE Quick Charts (`org.kde.quickcharts`: `LineChart`, `BarChart`, `HistoryProxySource`).
 
 ## Layout
 

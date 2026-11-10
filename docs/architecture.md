@@ -36,7 +36,7 @@ package/
   contents/ui/main.qml           the whole widget: sensors, text, widths, strip, popup, drag handle
   contents/ui/configGeneral.qml  settings page: units, warning temperature, maximum length, refresh
   contents/ui/configMetrics.qml  settings page: the stat table (show/graph, order), fan/battery options
-  contents/ui/configGraphs.qml   settings page: panel graph style, history length
+  contents/ui/configGraphs.qml   settings page: panel graph style, chart style, history length
   contents/ui/LengthNotice.qml   warning banner shown on the General and Metrics pages
 install.sh / uninstall.sh        kpackagetool6 wrappers (install or upgrade for the current user)
 package.sh                       zips metadata.json + contents/ into dist/<id>-<version>.plasmoid
@@ -52,7 +52,7 @@ used from `root`'s own scope:
 |---|---|
 | `FanDiscovery` | one-time lookup of `lmsensors/<chip>/fanN` sensors (section 10) |
 | `History` | a `Loader` that owns one `HistoryProxySource` (section 8) |
-| `Spark` | the small `Charts.LineChart` used by every graph |
+| `Spark` | the small line or bar chart used by every graph |
 | `FanIcon` | the three-blade fan, stepped animation |
 | `PopupRow`, `PopupGraph` | popup building blocks (`PopupGraph` extends `Spark`) |
 | `Divider`, `MetricCell` | declared inside `compactRepresentation`; the panel strip |
@@ -399,10 +399,35 @@ that expose a `value`, so they look like sensors.
 
 ### Drawing
 
-`Spark` is a `Charts.LineChart`: `valueSources` is one or two histories, `xRange` is automatic (spans the
+`Spark` is an `Item` that creates either a line or a bar chart (the `chartStyle` setting, read once as
+`root.barChart`; the style not in use is not created, each lives in its own `Loader`).
+
+Line: a `Charts.LineChart`: `valueSources` is one or two histories, `xRange` is automatic (spans the
 samples collected so far, then scrolls), `yRange` is `yFrom..yTo` (not automatic), `direction: ZeroAtEnd`
 (newest on the right), `interpolate: false`, a line of 1.5 and `fillOpacity: 0.15`. A second series uses
-`lineColor2` (`positiveTextColor`). Every graph in the widget is a `Spark`: the behind-text one in
+`lineColor2` (`positiveTextColor`).
+
+Bar: a `Charts.BarChart` (an `XYChart`, so the same fixed `yRange`, `ZeroAtEnd` and `stacked` apply). It
+has no bucketing of its own and `HistoryProxySource` does not expose its samples to QML, so:
+
+- Each `History` also owns a small sample store (`samples`: the last `2 * historyLen` values, a running
+  `count` and a `revision`). It is filled from the proxy's `dataChanged` (one per history tick) while
+  `root.barChart` is true and cleared when bars are turned off. `root.sampleStoreOf(source)` maps a
+  history source to its store, so `Spark` keeps the same `history`/`history2` interface.
+- `Spark` merges samples into buckets: `barCount = floor(width / 3)` (2 px bar + 1 px gap at least),
+  `bucketSize = ceil(historyLen / barCount)`, `slotCount = ceil(historyLen / bucketSize)` and
+  `slotPx = floor(width / slotCount)`. Buckets are counted from the first sample, so only the newest
+  one changes between ticks. `rebuild()` (scheduled with `Qt.callLater`) writes the mean of each bucket
+  into a `ListModel` (row 0 = newest, which `ZeroAtEnd` draws at the right edge) read by two
+  `Charts.ModelSource`s (roles `a` for the first series, `b` for the second). It reruns when the store
+  changes, the width changes or the history length changes.
+- The chart is `slotCount * slotPx` wide, anchored to the right, with `xRange` fixed to `0..slotCount`
+  so a bar keeps its width while the history is still filling, `spacing: 1` and
+  `barWidth: slotPx - 1`. Bar edges can be anti-aliased by about half a pixel.
+- Two series are drawn stacked (download below, upload above), so the network scale covers the sum
+  (see Scales).
+
+Every graph in the widget is a `Spark`: the behind-text one in
 `MetricCell` (opacity 0.5), the inline one in `MetricCell`, and `PopupGraph` (which adds `statId`, a `wanted`
 extra condition used by the temperature graph so it needs its row, and its own `on`/`visible`).
 
@@ -421,7 +446,9 @@ and `c` unchanged otherwise. The fill uses the line colour, so it follows. Dark 
 - network: 0..`netPeak`. `trackNetPeak()` runs from `netDown.onValueChanged` (once per refresh; upload updates
   in the same tick) and returns at once unless a net graph is on (`gpNet || gdNet`). It sets
   `netPeak = max(100000, down, up, netPeak * 0.99^(refreshMs/1000))`: it rises immediately to the highest rate
-  and decays about 1% per second of real time, whatever the refresh rate, never below 100 KB/s.
+  and decays about 1% per second of real time, whatever the refresh rate, never below 100 KB/s. With bar
+  graphs on, the value fed into the max is `down + up` instead of `max(down, up)` (a stacked bar is as tall
+  as the sum); the line-mode scale is unchanged.
 
 The line colour is `statLineColor(id)`: red (`negativeTextColor`) while the stat is in alert (`statAlert`:
 `temp` with `avgHot`, `bat` with `batLow`), otherwise the highlight colour.
@@ -572,7 +599,9 @@ spin boxes and plain properties for the two combo boxes. Combo boxes use a `Bind
 plain binding, so Defaults and external changes keep updating the box.
 
 Split by page: General has `useFahrenheit`, `netBits`, `warnTemp`, `refreshMs`, `maxLength`. Graphs has
-`panelGraphStyle` (stored as 1 behind text, 2 inline; an old 0 shows as "Behind text") and `historySeconds`
+`panelGraphStyle` (stored as 1 behind text, 2 inline; an old 0 shows as "Behind text"), `chartStyle` (stored as
+1 line, 2 bar; anything else shows as "Line"; `main.qml` carries `chartStyleBar` = 2 as a copy of the stored
+value) and `historySeconds`
 (the combo snaps to the nearest of 30/60/300). Metrics has everything else a user sets (`statOrder`, the
 `show*`, `graphPanel*`, `popup*`, `graphPopup*`, `batSeparate`, `fanAnimate`). The hidden keys of section 7
 have no `cfg_` property anywhere. `main.qml` carries `styleInline` = 2 as a copy of the stored value and its

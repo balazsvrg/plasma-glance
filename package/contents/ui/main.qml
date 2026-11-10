@@ -73,13 +73,14 @@ PlasmoidItem {
     Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
     Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
     // Network graph scale: rises at once to the highest rate (down or up) and decays about 1% per
-    // second of real time, whatever the refresh rate; never below 100 KB/s.
+    // second of real time, whatever the refresh rate; never below 100 KB/s. Bar graphs stack download
+    // and upload, so they need the scale to cover the sum; the line graph keeps the higher of the two.
     property real netPeak: 100000
     function trackNetPeak() {
         if (!(gpNet || gdNet)) return                  // the scale only matters to a graph
         var d = isNum(netDown.value) ? Number(netDown.value) : 0
         var u = isNum(netUp.value) ? Number(netUp.value) : 0
-        netPeak = Math.max(100000, d, u, netPeak * Math.pow(0.99, refreshMs / 1000))
+        netPeak = Math.max(100000, barChart ? d + u : Math.max(d, u), netPeak * Math.pow(0.99, refreshMs / 1000))
     }
     // ---- battery ----
     // Data comes from Plasma's power-management engine, the same source KDE's own
@@ -240,6 +241,8 @@ PlasmoidItem {
     readonly property int styleInline: 2   // stored value of "Inline"; keep in sync with configGraphs.qml (1 = behind text)
     readonly property int panelGraphStyle: Plasmoid.configuration.panelGraphStyle
     readonly property bool graphInline: panelGraphStyle === styleInline   // anything else (incl. an old 0) is "behind"
+    readonly property int chartStyleBar: 2   // stored value of "Bar"; keep in sync with configGraphs.qml (1 = line)
+    readonly property bool barChart: Plasmoid.configuration.chartStyle === chartStyleBar   // anything else is "line"
     // Which stats get a graph: gp* in the panel, gd* in the popup (Metrics tab).
     readonly property bool gpCpu:  Plasmoid.configuration.graphPanelCpu
     readonly property bool gpRam:  Plasmoid.configuration.graphPanelRam
@@ -266,6 +269,7 @@ PlasmoidItem {
         property bool wanted: false
         property bool ready: false          // latched once the sensor has reported a number
         readonly property var historySource: item ? item.history : null
+        readonly property var sampleStore: item ? item.store : null
         readonly property bool numeric: root.isNum(sensor.value)
 
         onNumericChanged: if (numeric) ready = true
@@ -280,6 +284,30 @@ PlasmoidItem {
                 maximumHistory: root.historyLen
                 interval: root.refreshMs
                 fillMode: Charts.HistoryProxySource.DoNotFill
+            }
+            // The chart source keeps its samples to itself, so bar graphs get their own copy of the
+            // recent values (one per history tick, only while bars are shown).
+            readonly property var store: samples
+            QtObject {
+                id: samples
+                property var values: []          // the most recent samples, oldest first
+                property int count: 0            // samples seen since the store started
+                property int revision: 0         // changes whenever a sample is added
+                function reset() { values = []; count = 0; revision++ }
+                function add(v) {
+                    values.push(v)
+                    if (values.length > 2 * root.historyLen) values.splice(0, values.length - 2 * root.historyLen)
+                    count++
+                    revision++
+                }
+            }
+            Connections {
+                target: root.barChart ? h : null
+                function onDataChanged() { if (root.isNum(hist.sensor.value)) samples.add(Number(hist.sensor.value)) }
+            }
+            Connections {
+                target: root
+                function onBarChartChanged() { if (!root.barChart) samples.reset() }
             }
         }
     }
@@ -301,12 +329,22 @@ PlasmoidItem {
     readonly property var netUpHist: netUpHistory.historySource
     readonly property var batHist: batHistory.historySource
     readonly property var fanHist: fanHistory.historySource
+    // The bar graphs' sample store belonging to one of the history sources above.
+    function sampleStoreOf(source) {
+        if (!source) return null
+        var all = [cpuHistory, ramHistory, tempHistory, freqHistory, netDownHistory, netUpHistory, fanHistory, batHistory]
+        for (var i = 0; i < all.length; ++i) {
+            if (all[i].historySource === source) return all[i].sampleStore
+        }
+        return null
+    }
 
-    // One small line graph; used by the panel cells and the popup.
-    component Spark: Charts.LineChart {
+    // One small graph, a line or bars (Graphs tab); used by the panel cells and the popup. Both styles
+    // read the same history, scale and colours. Only the style in use is created.
+    component Spark: Item {
         id: spark
         property var history: null
-        property var history2: null          // optional second line (e.g. upload)
+        property var history2: null          // optional second series (e.g. upload)
         property real yFrom: 0
         property real yTo: 100
         property color lineColor: Kirigami.Theme.highlightColor
@@ -317,14 +355,85 @@ PlasmoidItem {
         readonly property bool lightTheme: Kirigami.Theme.backgroundColor.hslLightness > 0.5
         function shade(c) { return lightTheme ? Qt.darker(c, lightFactor) : c }
 
-        valueSources: history ? (history2 ? [history, history2] : [history]) : []
-        colorSource: Charts.ArraySource { array: [spark.shade(spark.lineColor), spark.shade(spark.lineColor2)] }
-        xRange { automatic: true }            // spans the samples collected so far
-        yRange { from: spark.yFrom; to: spark.yTo; automatic: false }
-        direction: Charts.XYChart.ZeroAtEnd   // newest sample on the right
-        lineWidth: 1.5
-        fillOpacity: 0.15
-        interpolate: false
+        // Bars: neighbouring samples are merged so that every bar is at least 2 px wide with a 1 px gap,
+        // and a bar shows the mean of its samples. Buckets are counted from the first sample, so a bar only
+        // changes while it is the newest and the others stay put until a new bar starts.
+        readonly property int barSlot: 3                                     // px per bar, gap included
+        readonly property int barCount: Math.max(1, Math.floor(width / barSlot))
+        readonly property int bucketSize: Math.max(1, Math.ceil(root.historyLen / barCount))
+        // The bars the whole history needs, each a whole number of pixels wide.
+        readonly property int slotCount: Math.max(1, Math.min(barCount, Math.ceil(root.historyLen / bucketSize)))
+        readonly property int slotPx: Math.max(barSlot, Math.floor(width / slotCount))
+        readonly property var store: root.sampleStoreOf(history)
+        readonly property var store2: root.sampleStoreOf(history2)
+
+        // The mean of the samples of bucket `id` (0 when the bucket has none).
+        function bucketMean(s, id) {
+            if (!s) return 0
+            var first = s.count - s.values.length
+            var lo = Math.max(id * bucketSize, first)
+            var hi = Math.min(id * bucketSize + bucketSize - 1, s.count - 1)
+            if (hi < lo) return 0
+            var sum = 0
+            for (var a = lo; a <= hi; ++a) sum += s.values[a - first]
+            return sum / (hi - lo + 1)
+        }
+        // Row 0 is the newest bucket (the chart draws row 0 at the right edge, see ZeroAtEnd below).
+        function rebuild() {
+            if (!root.barChart || !store) return
+            var newest = Math.floor((store.count - 1) / bucketSize)
+            var rows = 0
+            for (var j = 0; j < slotCount && newest - j >= 0; ++j) {
+                if (store.count - store.values.length > (newest - j + 1) * bucketSize - 1) break   // no samples left for this bar
+                var row = { a: bucketMean(store, newest - j), b: store2 ? bucketMean(store2, newest - j) : 0 }
+                if (rows < barModel.count) barModel.set(rows, row)
+                else barModel.append(row)
+                ++rows
+            }
+            if (rows === 0) { rows = 1; barModel.set(0, { a: 0, b: 0 }) }      // keep one row so the model has its roles
+            if (barModel.count > rows) barModel.remove(rows, barModel.count - rows)
+        }
+        function scheduleRebuild() { Qt.callLater(rebuild) }
+        onSlotCountChanged: scheduleRebuild()
+        onBucketSizeChanged: scheduleRebuild()
+        onStoreChanged: scheduleRebuild()
+        Component.onCompleted: scheduleRebuild()
+        Connections { target: spark.store; function onRevisionChanged() { spark.scheduleRebuild() } }
+        Connections { target: spark.store2; function onRevisionChanged() { spark.scheduleRebuild() } }
+        ListModel { id: barModel; ListElement { a: 0; b: 0 } }
+        Charts.ModelSource { id: barDown; model: barModel; roleName: "a" }
+        Charts.ModelSource { id: barUp; model: barModel; roleName: "b" }
+
+        Loader {
+            anchors.fill: parent
+            active: !root.barChart
+            sourceComponent: Charts.LineChart {
+                valueSources: spark.history ? (spark.history2 ? [spark.history, spark.history2] : [spark.history]) : []
+                colorSource: Charts.ArraySource { array: [spark.shade(spark.lineColor), spark.shade(spark.lineColor2)] }
+                xRange { automatic: true }            // spans the samples collected so far
+                yRange { from: spark.yFrom; to: spark.yTo; automatic: false }
+                direction: Charts.XYChart.ZeroAtEnd   // newest sample on the right
+                lineWidth: 1.5
+                fillOpacity: 0.15
+                interpolate: false
+            }
+        }
+        Loader {
+            anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
+            width: spark.slotCount * spark.slotPx
+            active: root.barChart
+            sourceComponent: Charts.BarChart {
+                // The two series (download, upload) are stacked, so the scale covers their sum.
+                stacked: true
+                spacing: 1
+                barWidth: spark.slotPx - spacing
+                valueSources: spark.history ? (spark.history2 ? [barDown, barUp] : [barDown]) : []
+                colorSource: Charts.ArraySource { array: [spark.shade(spark.lineColor), spark.shade(spark.lineColor2)] }
+                xRange { from: 0; to: spark.slotCount; automatic: false }   // fixed bar width, newest bar at the edge
+                yRange { from: spark.yFrom; to: spark.yTo; automatic: false }
+                direction: Charts.XYChart.ZeroAtEnd   // newest sample on the right
+            }
+        }
     }
 
     // A small three-blade fan drawn from rounded rectangles, in the theme's text colour.

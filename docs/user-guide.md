@@ -149,7 +149,20 @@ on each row, and an **All graphs** row at the bottom that sets every one of them
 - **In the popup**, as a wider graph under the stat's rows. The temperature graph belongs to the
   "CPU temp (avg)" row, so it only appears while that row is shown.
 
-The network graph has two lines (download, and upload in a second colour).
+The network graph has two series (download, and upload in a second colour).
+
+### Chart style
+
+The **Chart style** option (Graphs tab) is **Line** (default) or **Bar**. It applies to every graph,
+in the panel (behind the text and inline) and in the popup. The scales, colours (including the red
+alert colour) and the newest-sample-on-the-right layout are the same in both styles.
+
+In **Bar** mode neighbouring samples are merged so that every bar stays at least 2 px wide with a
+1 px gap, and a bar shows the mean of the samples it covers. A wide popup graph therefore shows more
+(and wider) bars than a small panel one. The network graph stacks its bars: download at the bottom,
+upload on top in its own colour, so the scale covers the sum of the two. Bars are collected from the
+moment Bar is chosen, so after switching from Line a graph starts empty and fills over the history
+length.
 
 ### Scales
 
@@ -158,7 +171,7 @@ The network graph has two lines (download, and upload in a second colour).
 | CPU usage, memory, battery | 0 to 100% |
 | Temperature | 20 °C up to 100 °C, or your warning threshold plus 10 if that is higher |
 | CPU frequency | 0 up to the highest reading of the CPU's maximum-frequency sensor seen so far, never below 1 GHz |
-| Network | 0 up to the highest rate seen (download or upload), decaying about 1% per second; never below 100 KB/s |
+| Network | 0 up to the highest rate seen (download or upload), decaying about 1% per second; never below 100 KB/s. As bars, the scale covers the highest download plus upload instead |
 | Fan | 0 up to the highest RPM seen so far (it does not decay), never below 3000 |
 
 ### History
@@ -342,6 +355,7 @@ while something shows them.
 |---|---|
 | Draw panel graphs faintly behind the text, using no space | **Panel graph style:** `Behind text` (default). |
 | Draw panel graphs as a small chart next to the text | **Panel graph style:** `Inline`. |
+| Draw graphs as bars instead of a line | **Chart style:** `Bar` (`Line` is the default). |
 | Make graphs show more or less history | **History length:** `30 seconds`, `1 minute` (default) or `5 minutes`. |
 
 Which stats get graphs is chosen on the Metrics tab. The style and history length apply to every
