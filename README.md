@@ -164,6 +164,20 @@ install.sh / uninstall.sh
 
 ## Changelog
 
+**0.4**
+- New stats, all off by default: CPU frequency, network speed (all interfaces, bytes or bits), battery
+  (combined, or each battery separately in the popup; laptops only) and fan speed with a three-speed
+  spinning fan icon that blurs, shakes and throws speed lines as the fan speeds up.
+- The Metrics tab (replaces the Popup tab): one row per stat with Show and Graph checkboxes for the panel
+  and the popup, and an All graphs row. Graphs are now chosen per stat; the Graphs tab only holds the style
+  and history length.
+- Maximum length: limits the strip with readable compaction steps (inline graphs go behind the text,
+  compact text, tight spacing), then drops stats from the end. Set it in General or by dragging a handle on
+  the strip's free edge (right-click > Adjust length with the mouse), with a halfway rule so small nudges
+  do not make the strip jump.
+- The settings warn when the limit is changing what you see, and mark each hidden stat.
+- Power-management data source for the battery (KDE's ksystemstats power sensors disagreed with the kernel).
+
 **0.3**
 - Optional line graphs: in the panel (Behind text or Inline) and under each popup item.
 - New Graphs settings tab: panel style, popup graphs, history length (30 s, 1 min, 5 min).
