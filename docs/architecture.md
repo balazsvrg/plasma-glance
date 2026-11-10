@@ -350,7 +350,7 @@ that the pages read live. The keys (all in `main.xml`, described there as "writt
 | `lengthTextShort` | `syncLengthInfo` | `!vertical && fit.level >= 2` |
 | `lengthDropped` | `syncLengthInfo` | comma-separated ids dropped from the strip |
 | `lengthInlineOff` | `syncLengthInfo` | inline graphs are currently shown behind the text because of the limit |
-| `batteryCount` | `syncBatteryCount` | number of batteries, 0 if none (`hasBattery ? batterySources.length : 0`) |
+| `batteryCount` | `syncBatteryCount` | number of batteries, 0 if none (from the `"Battery"` source data: `"Has Battery"` true ? `"Sources".length` : 0) |
 | `fanCount` | the `FanDiscovery` loader | number of fans, written when discovery is final |
 
 `syncLengthInfo()` returns early while dragging (nothing is written during a drag). It works out
@@ -440,8 +440,9 @@ Battery numbers are verified against `/sys/class/power_supply/BAT*` and `upower 
 - `batLow` is `batPercent < 15 && batState <= 0`; with `avgHot` it is one of the two `statAlert` conditions.
 - `batShown = showBat && hasBattery` and `popupBatShown = popupBat && hasBattery`, so everything
   downstream (strip, popup, tooltip, history) disappears on a machine without a battery.
-- `syncBatteryCount()` writes `batteryCount`. It runs from `onHasBatteryChanged` and `onBatterySourcesChanged`
-  only; there is no call at startup.
+- `syncBatteryCount(data)` writes `batteryCount`. It runs from a `Connections { target: powerSource }`
+  `onNewData` handler for the `"Battery"` source and computes the count from the event's `data` argument, so
+  the first answer from the engine corrects a stale saved value even if `hasBattery` never changes.
 - The popup block shows the combined line, optionally one line per battery
   (`batSeparate && batterySources.length > 1`), and a charge/discharge time line. The engine reports no
   watts, so no power draw is shown.
@@ -690,8 +691,8 @@ Each of these is visible in the code or its comments, except where marked.
   `currentIndex + 1` in `configGraphs.qml`.
 - Write widget-owned settings with `setCfg` (writes only on change). Plain assignment is used only for the
   user-visible `maxLength` in `finishDrag` and `resetLength`.
-- `syncBatteryCount` has no startup call. If `hasBattery` never changes from its initial false, `batteryCount`
-  keeps whatever value was saved earlier (an observation from reading the code, not tested).
+- `syncBatteryCount` must keep reading the `newData` event's `data`, not the derived `hasBattery` /
+  `batterySources` properties, which can be stale inside a change handler.
 - Vertical panels cannot be tested with `plasmawindowed`, and the vertical branches of `cellLength` are
   estimates. Real mouse events cannot be injected in the dev environment, so the handle's `MouseArea`
   handlers are only tested by hand.
