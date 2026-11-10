@@ -4,9 +4,11 @@
 // templates into panel / popup text.
 //
 // STATUS: main.qml takes its panel text (statText, verticalLines), its horizontal width reserves, its alerts,
-// its graph scales and its graph histories (one per series) from this file, and reads the graph and popup flags
-// through keys.gp / keys.gd / keys.popup; the rest of a descriptor (the other keys, sensors, popup rows) is not
-// used by the widget yet and is checked against it by tests/metrics_test.py. This is a .pragma library: the
+// its graph scales, its graph histories (one per series) and its plain sensors (one per `sensors` entry, polled
+// when sensorActive says so) from this file, and reads the graph and popup flags through keys.gp / keys.gd /
+// keys.popup, and builds its popup (rows, graph, hooks, repeat, hardware checks) from `popup`; only the
+// descriptor's other keys and defaults are not used by the widget yet and are checked against it by
+// tests/metrics_test.py. This is a .pragma library: the
 // functions are pure and see no QML properties, so the caller passes every setting in through ctx and every
 // value through vals.
 //
@@ -16,7 +18,7 @@
 //   keys      config keys (main.xml names): show, popup, gp (panel graph), gd (popup graph),
 //             options (extra per-stat settings, name -> key), hidden (keys the widget writes itself)
 //   defaults  main.xml defaults for those keys (same shape as keys)
-//   sensors   name -> { id, gate, expanded }: sensor ids and when each is polled.
+//   sensors   name -> { id, gate, expanded, noRateLimit }: sensor ids and when each is polled.
 //             gate is "show", "popup", "show|popup" or "opt:<key>"; expanded:true also needs the popup open
 //   source    only when values do not come from plain sensors: { kind: "dataengine" | "discovered", ... }
 //   panel     full / compact: horizontal templates; vertical / verticalCompact: arrays of line templates
@@ -28,9 +30,18 @@
 //               observe     { keys, combine, barCombine }: the vals keys the scale watches (combine "max" or
 //                           "sum" when there are several; barCombine replaces combine when bars are drawn)
 //               needsGraph  true: the scale is only followed while a graph of the stat is enabled
+//               trigger     name of the sensor (a key of `sensors`) whose update steps the peak, once per refresh
+//                           (a stat without one, the fan, steps from its own value change)
 //   alert     function(vals, ctx) -> bool: the panel text turns red
 //   series    keys of vals drawn as graph series ([value] or [down, up]): one history per series
-//   popup     rows: [{ label, value, when, alert }], graph: bool, hooks: names of bespoke parts
+//   popup     rows: [{ label, value, when, alert, decoration }], graph: bool, graphWhen, hooks: names of bespoke parts,
+//             repeat: one line per item (per-core temperatures), available: name of a hardware check ("hasBattery",
+//             "hasFan") the stat's popup also needs. when / graphWhen / repeat.when name a flag: "popup" (keys.popup)
+//             or an option name (keys.options); no when means the row is shown whenever the stat's popup is.
+//             alert is "panel" (the panel's rule) or a function(vals, ctx). decoration "fanIcon" puts the fan icon
+//             before the value. graphAfter: index of the row the graph follows (default: after the last row).
+//             repeat: { when, countSensor, header, label, sensor, value, alert }, "{n}" is the item index in
+//             sensor and index + 1 in label.
 // Template syntax: "{key:format}" (see FORMATS); any other text is copied as is.
 
 var DEFAULT_ORDER = ["cpu", "ram", "temp", "freq", "net", "bat", "fan"]
@@ -161,7 +172,7 @@ var METRICS = [
         sensors: {
             value:     { id: "cpu/all/averageTemperature", gate: "show|popup" },
             max:       { id: "cpu/all/maximumTemperature", gate: "opt:popupMax", expanded: true },
-            coreCount: { id: "cpu/all/coreCount", gate: "opt:popupCores", expanded: true }
+            coreCount: { id: "cpu/all/coreCount", gate: "opt:popupCores", expanded: true, noRateLimit: true }
         },
         panel: {
             full: "{value:temp}", compact: "{value:tempShort}",
@@ -178,7 +189,7 @@ var METRICS = [
                 { label: "CPU temp (max core)", value: "{max:temp}", when: "popupMax",
                   alert: function (vals, ctx) { return isNum(vals.max) && vals.max >= ctx.warnTempC } }
             ],
-            graph: true, graphWhen: "popup",       // the graph needs the average row
+            graph: true, graphWhen: "popup", graphAfter: 0,   // the graph needs the average row and sits under it
             // One sensor per core, "cpu/cpu<N>/temperature", N = 0 .. coreCount - 1
             repeat: {
                 hook: "perCore", when: "popupCores", countSensor: "coreCount",
@@ -202,7 +213,7 @@ var METRICS = [
             sample: { value: 9900 }                // 9.9 GHz
         },
         // The hardware maximum is not a sensor: the scale grows to the highest "max" seen, never below 1 GHz.
-        scale: { from: 0, mode: "peak", floor: 1000, observe: { keys: ["max"] } },
+        scale: { from: 0, mode: "peak", floor: 1000, trigger: "max", observe: { keys: ["max"] } },
         series: ["value"],
         popup: {
             rows: [
@@ -240,7 +251,7 @@ var METRICS = [
         // download and upload, so they observe the sum; the line graph the higher one. Only followed while a
         // net graph is enabled.
         scale: {
-            from: 0, mode: "decay", floor: 100000, decay: 0.99, needsGraph: true,
+            from: 0, mode: "decay", floor: 100000, decay: 0.99, needsGraph: true, trigger: "down",
             observe: { keys: ["down", "up"], combine: "max", barCombine: "sum" }
         },
         series: ["down", "up"],
@@ -285,7 +296,7 @@ var METRICS = [
         series: ["percent"],
         popup: {
             rows: [{ label: "Battery", value: "{percent:pct}{state:arrowSp}{energy:whParen}", alert: "panel" }],
-            graph: true,
+            graph: true, available: "hasBattery",
             // per-battery lines ("each battery separately"), and the charging / time-left row
             hooks: ["perBattery", "chargeRow"]
         }
@@ -317,7 +328,7 @@ var METRICS = [
         series: ["value"],
         popup: {
             rows: [{ label: "Fan", value: "{value:rpm} RPM", decoration: "fanIcon" }],
-            graph: true
+            graph: true, available: "hasFan"
         }
     }
 ]
@@ -325,6 +336,25 @@ var METRICS = [
 function byId(id) {
     for (var i = 0; i < METRICS.length; ++i) if (METRICS[i].id === id) return METRICS[i]
     return null
+}
+
+// ---- settings pages ----
+// The name shown for a stat in the settings and the maximum-length notice (the id itself if unknown).
+function statName(id) {
+    var m = byId(id)
+    return m ? m.name : id
+}
+// One row of the Metrics table per stat, in registry order: the display name and the four checkbox keys.
+function settingsRows() {
+    return METRICS.map(function (m) {
+        return { id: m.id, name: m.name, show: m.keys.show, graph: m.keys.gp, popup: m.keys.popup, popupGraph: m.keys.gd }
+    })
+}
+// The hidden config key holding how many devices the widget found, for a stat that needs hardware (battery,
+// fan); "" for the others, which are always available.
+function hardwareKey(id) {
+    var m = byId(id)
+    return m && m.keys.hidden && m.keys.hidden.count ? m.keys.hidden.count : ""
 }
 
 // ---- panel text ----
@@ -397,6 +427,72 @@ function stepPeak(m, prev, vals, ctx, dtMs) {
 // Whether the stat's panel text (and graph colour) is in its alert state.
 function alertOf(m, vals, ctx) {
     return !!m.alert && !!m.alert(vals, ctx)
+}
+
+// ---- sensors ----
+// Every plain sensor of every stat, in registry order: [{ id: <stat id>, name: <key of the stat's sensors> }].
+function sensorKinds() {
+    var list = []
+    for (var i = 0; i < METRICS.length; ++i)
+        for (var name in METRICS[i].sensors) list.push({ id: METRICS[i].id, name: name })
+    return list
+}
+
+// The names of a stat's sensors the panel reads (those polled for the strip, gate "show" or "show|popup"); the
+// popup-only ones are left out of the values the panel text, alert and scale bindings depend on.
+function panelSensorNames(m) {
+    var names = []
+    for (var name in m.sensors) {
+        var g = m.sensors[name].gate
+        if (g === "show" || g === "show|popup") names.push(name)
+    }
+    return names
+}
+
+// ---- popup ----
+// Flags: { popup: bool, opts: { <option name>: bool }, available: { hasBattery: bool, hasFan: bool } }.
+function flagOn(flag, flags) {
+    if (flag === undefined) return true
+    return flag === "popup" ? !!flags.popup : !!(flags.opts && flags.opts[flag])
+}
+// The flags (other than "popup") whose options show something in the stat's popup.
+function popupFlagNames(m) {
+    var names = [], p = m.popup
+    for (var i = 0; i < p.rows.length; ++i) if (p.rows[i].when) names.push(p.rows[i].when)
+    if (p.repeat && p.repeat.when) names.push(p.repeat.when)
+    return names
+}
+// Whether the stat has anything in the popup: its popup flag, or an option that shows a row (temperature), and
+// the hardware check the descriptor names.
+// Whether the hardware a stat's popup needs (popup.available) exists.
+function popupAvailable(m, flags) {
+    var a = m.popup.available
+    return !a || !!(flags.available && flags.available[a])
+}
+function popupOn(m, flags) {
+    var p = m.popup
+    if (!popupAvailable(m, flags)) return false
+    if (flags.popup) return true
+    var names = popupFlagNames(m)
+    for (var i = 0; i < names.length; ++i) if (flagOn(names[i], flags)) return true
+    return false
+}
+function popupRowShown(row, flags) { return flagOn(row.when, flags) }
+// How many rows come before the graph.
+function popupRowsBeforeGraph(m) {
+    var p = m.popup
+    return p.graphAfter === undefined ? p.rows.length : p.graphAfter + 1
+}
+function popupGraphShown(m, flags) { return !!m.popup.graph && flagOn(m.popup.graphWhen, flags) }
+// Every label the popup's name column can show (its width is the widest).
+function popupLabels(list) {
+    var labels = []
+    for (var i = 0; i < list.length; ++i) {
+        var p = list[i].popup
+        for (var j = 0; j < p.rows.length; ++j) labels.push(p.rows[j].label)
+        if (p.repeat) labels.push(p.repeat.label.replace("{n}", "10"))
+    }
+    return labels
 }
 
 // ---- sensor gating ----

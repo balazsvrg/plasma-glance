@@ -224,11 +224,12 @@ prints one line per failure, a summary, and exits non-zero if anything failed. I
   `render()` itself;
 - how `main.qml` uses the registry: it imports `Metrics.js`, the retired per-stat panel code (`valueText`, the
   `m*` `TextMetrics`, the per-stat peak properties and `History` items, the `gp*` / `gd*` flags, ...) does not
-  come back, the keys `statVals` and `scaleVals` supply equal the keys the templates and the scales read,
-  `historySensors` covers every registry series, and the settings the formatters read are the ones `textCtx`
+  come back, the keys `statVals` (for plain sensors: `sensorVals`, one value per registry sensor) supplies equal the keys the
+  templates and the scales read, every registry series names a sensor, the scale triggers name sensors, the
+  registry's gates equal the 14 hand-written `enabled:` expressions of v0.9.2, and the settings the formatters read are the ones `textCtx`
   carries;
-- the structure: unique ids, names equal to the Metrics table and `LengthNotice` labels, sensor ids equal to
-  the ones in `main.qml`, and every key of `main.xml` either claimed by one descriptor (with the same
+- the structure: unique ids, names equal to the Metrics table and `LengthNotice` labels, no sensor id spelled in
+  `main.qml` (only the per-core pattern), and every key of `main.xml` either claimed by one descriptor (with the same
   default) or listed in the script with the reason it stays outside.
 
 ### Golden data
@@ -334,6 +335,11 @@ Uninstalling removes the package but not the saved settings in your Plasma confi
 
 ## Known limitations
 
+- **Stat names and popup labels are not translated.** The registry (`Metrics.js`, a `.pragma library`) holds
+  plain English names and labels and cannot call `i18n`. Since the settings pages and the maximum-length
+  notice take the stat names from it, those names, which used to go through `i18n`, now appear in English
+  in every locale. Accepted for now. A later improvement could translate them in the QML callers
+  (for example `i18n(M.statName(id))`, with the strings extracted from the registry).
 - **No real mouse injection.** Nothing in this environment can inject mouse events (no `ydotool` or
   `xdotool`, and `/dev/uinput` is not accessible). The real `MouseArea` handlers, including the
   maximum-length drag handle, are tested only by hand by the maintainer. Drive the state functions with

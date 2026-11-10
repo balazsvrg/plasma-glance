@@ -24,13 +24,6 @@ PlasmoidItem {
     readonly property bool netBits: Plasmoid.configuration.netBits
     readonly property bool showBat: Plasmoid.configuration.showBat
     readonly property bool useF: Plasmoid.configuration.useFahrenheit
-    readonly property bool popupCpu: Plasmoid.configuration.popupCpu
-    readonly property bool popupMemory: Plasmoid.configuration.popupMemory
-    readonly property bool popupTempAvg: Plasmoid.configuration.popupTempAvg
-    readonly property bool popupTempMax: Plasmoid.configuration.popupTempMax
-    readonly property bool popupCores: Plasmoid.configuration.popupCores
-    readonly property bool popupFreq: Plasmoid.configuration.popupFreq
-    readonly property bool popupNet: Plasmoid.configuration.popupNet
     readonly property bool popupBat: Plasmoid.configuration.popupBat
     readonly property bool batSeparate: Plasmoid.configuration.batSeparate
     readonly property bool showFan: Plasmoid.configuration.showFan
@@ -55,21 +48,12 @@ PlasmoidItem {
         var p = peaks[id]
         return p === undefined ? M.byId(id).scale.floor : p
     }
-    // What the scale of a stat watches (registry: scale.observe.keys), read live from its sensors.
-    function scaleVals(id) {
-        switch (id) {
-        case "freq": return { max: freqMax.value }
-        case "net":  return { down: netDown.value, up: netUp.value }
-        case "fan":  return { value: fanRpm }
-        }
-        return {}
-    }
     // One step of a stat's peak. The time that passed since the last step is the refresh interval (the triggers
     // run once per sensor update), so the decay of the network scale is about 1% per second whatever the rate.
     function stepPeak(id) {
         var prev = peakOf(id)
         var ctx = { barChart: barChart, graphOn: statGraph(id) || statPopupGraph(id) }
-        var next = M.stepPeak(M.byId(id), prev, scaleVals(id), ctx, refreshMs)
+        var next = M.stepPeak(M.byId(id), prev, statVals(id), ctx, refreshMs)
         if (next === prev) return
         var map = {}
         for (var k in peaks) map[k] = peaks[k]
@@ -78,35 +62,61 @@ PlasmoidItem {
     }
 
     // ---- sensors (IDs verified with `kstatsviewer --list`) ----
-    // A sensor is switched off when nothing shows its stat, so nothing polls for data nobody sees.
-    Sensors.Sensor { id: cpuUsage;   sensorId: "cpu/all/usage";                updateRateLimit: root.refreshMs; enabled: root.showCpu || root.popupCpu }
-    Sensors.Sensor { id: memPercent; sensorId: "memory/physical/usedPercent";  updateRateLimit: root.refreshMs; enabled: root.showRam || root.popupMemory }
-    Sensors.Sensor { id: memUsed;    sensorId: "memory/physical/used";         updateRateLimit: root.refreshMs; enabled: root.popupMemory && root.expanded }
-    Sensors.Sensor { id: memTotal;   sensorId: "memory/physical/total";        updateRateLimit: root.refreshMs; enabled: root.popupMemory && root.expanded }
-    Sensors.Sensor { id: tempAvg;    sensorId: "cpu/all/averageTemperature";   updateRateLimit: root.refreshMs; enabled: root.showTemp || root.popupTempAvg }
-    Sensors.Sensor { id: tempMax;    sensorId: "cpu/all/maximumTemperature";   updateRateLimit: root.refreshMs; enabled: root.popupTempMax && root.expanded }
-    Sensors.Sensor { id: freqAvg;    sensorId: "cpu/all/averageFrequency";     updateRateLimit: root.refreshMs; enabled: root.showFreq || root.popupFreq }
-    Sensors.Sensor { id: freqMin;    sensorId: "cpu/all/minimumFrequency";     updateRateLimit: root.refreshMs; enabled: root.popupFreq && root.expanded }
-    Sensors.Sensor {
-        id: freqMax
-        sensorId: "cpu/all/maximumFrequency"
-        updateRateLimit: root.refreshMs
-        enabled: root.showFreq || root.popupFreq
-        // The hardware maximum is not a sensor, so the frequency graph's scale
-        // grows to the highest value seen (never below 1 GHz).
-        onValueChanged: root.stepPeak("freq")
+    // One Sensor per `sensors` entry of the registry (Metrics.js: sensor id, and the gate that says when it is
+    // polled), so nothing polls for data nobody sees. `sensorItems` maps "<stat id>.<name>" to the created item and
+    // is a property, so a lookup made before the items existed is made again once they do (as reserveItems).
+    readonly property var sensorKinds: M.sensorKinds()
+    property var sensorItems: ({})
+    // A value that arrives while its sensor is still being created reaches onValueChanged before the item is in
+    // sensorItems (the step would read nothing), so once every sensor exists each trigger sensor that already has a
+    // number steps its peak once.
+    function stepTriggerPeaks() {
+        for (var i = 0; i < M.METRICS.length; ++i) {
+            var t = M.METRICS[i].scale.trigger
+            if (t && isNum(sensorValue(M.METRICS[i].id, t))) stepPeak(M.METRICS[i].id)
+        }
     }
-    // Network, all interfaces combined (bytes per second; totals in bytes since boot).
-    Sensors.Sensor {
-        id: netDown
-        sensorId: "network/all/download"
-        updateRateLimit: root.refreshMs
-        enabled: root.showNet || root.popupNet
-        onValueChanged: root.stepPeak("net")         // once per refresh (upload updates in the same tick)
+    function sensorOf(id, name) { return sensorItems[id + "." + name] || null }
+    function sensorValue(id, name) {
+        var s = sensorOf(id, name)
+        return s ? s.value : undefined
     }
-    Sensors.Sensor { id: netUp; sensorId: "network/all/upload"; updateRateLimit: root.refreshMs; enabled: root.showNet || root.popupNet }
-    Sensors.Sensor { id: netDownTotal; sensorId: "network/all/totalDownload"; updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
-    Sensors.Sensor { id: netUpTotal;   sensorId: "network/all/totalUpload";   updateRateLimit: root.refreshMs; enabled: root.popupNet && root.expanded }
+    // The inputs of M.sensorActive for a stat, read live from the settings (Plasmoid.configuration[key] is reactive).
+    function sensorFlags(id) {
+        var k = M.byId(id).keys, c = Plasmoid.configuration, opts = {}
+        for (var o in k.options) opts[o] = !!c[k.options[o]]
+        return { show: !!c[k.show], popup: !!c[k.popup], expanded: root.expanded, opts: opts }
+    }
+    Instantiator {
+        id: sensorInst
+        model: root.sensorKinds
+        delegate: Sensors.Sensor {
+            required property var modelData
+            readonly property var entry: M.byId(modelData.id).sensors[modelData.name]
+            readonly property string key: modelData.id + "." + modelData.name
+            sensorId: entry.id
+            readonly property bool isTrigger: M.byId(modelData.id).scale.trigger === modelData.name
+            updateRateLimit: entry.noRateLimit ? 0 : root.refreshMs
+            enabled: M.sensorActive(entry, root.sensorFlags(modelData.id))
+            // The sensor a following scale names as its trigger steps the peak once per refresh (the hardware
+            // maximum is not a sensor, so a graph's scale grows to the highest value seen).
+            onValueChanged: if (isTrigger) root.stepPeak(modelData.id)
+        }
+        onObjectAdded: {
+            // The map is built once, when the last sensor exists (every binding that reads it re-evaluates once).
+            if (count !== root.sensorKinds.length) return
+            root.sensorItems = sensorMap()
+            root.stepTriggerPeaks()
+        }
+        function sensorMap() {
+            var map = {}
+            for (var i = 0; i < count; ++i) {
+                var it = objectAt(i)
+                if (it) map[it.key] = it
+            }
+            return map
+        }
+    }
     // ---- battery ----
     // Data comes from Plasma's power-management engine, the same source KDE's own
     // battery widget uses. (KDE's ksystemstats power sensors lag and disagree with
@@ -253,9 +263,6 @@ PlasmoidItem {
     onFanRpmChanged: root.stepPeak("fan")
     QtObject { id: fanSensor; readonly property var value: root.fanRpm }
 
-    // Number of per-core temperature sensors (cpu/cpuN/temperature, N = 0..count-1).
-    Sensors.Sensor { id: coreCount;  sensorId: "cpu/all/coreCount"; enabled: root.popupCores && root.expanded }
-
     // ---- graph history ----
     // Each stat has its own history. It is collected only while a graph that
     // shows that stat is enabled, and it starts once the stat's sensor has
@@ -277,7 +284,7 @@ PlasmoidItem {
         property bool ready: false          // latched once the sensor has reported a number
         readonly property var historySource: item ? item.history : null
         readonly property var sampleStore: item ? item.store : null
-        readonly property bool numeric: root.isNum(sensor.value)
+        readonly property bool numeric: !!sensor && root.isNum(sensor.value)
 
         onNumericChanged: if (numeric) ready = true
         Component.onCompleted: if (numeric) ready = true
@@ -287,7 +294,7 @@ PlasmoidItem {
             readonly property var history: h
             Charts.HistoryProxySource {
                 id: h
-                source: Charts.SingleValueSource { value: hist.sensor.value }
+                source: Charts.SingleValueSource { value: hist.sensor ? hist.sensor.value : undefined }
                 maximumHistory: root.historyLen
                 interval: root.refreshMs
                 fillMode: Charts.HistoryProxySource.DoNotFill
@@ -310,7 +317,7 @@ PlasmoidItem {
             }
             Connections {
                 target: h
-                function onDataChanged() { if (root.isNum(hist.sensor.value)) samples.add(Number(hist.sensor.value)) }
+                function onDataChanged() { if (hist.numeric) samples.add(Number(hist.sensor.value)) }
             }
         }
     }
@@ -328,11 +335,13 @@ PlasmoidItem {
                 list.push({ id: M.METRICS[i].id, series: M.METRICS[i].series[j] })
         return list
     }
-    // Where each series' values come from: "<id>.<series>" -> an object with a `value` (the sensor items).
-    readonly property var historySensors: ({
-        "cpu.value": cpuUsage, "ram.value": memPercent, "temp.value": tempAvg, "freq.value": freqAvg,
-        "net.down": netDown, "net.up": netUp, "bat.percent": batSensor, "fan.value": fanSensor
-    })
+    // Where a series' values come from: an object with a `value`. A plain-sensor stat's series is the sensor of the
+    // same name (registry: series keys are sensor names); battery and fan wrap their value in a small QtObject.
+    function historySensor(id, series) {
+        if (id === "bat") return batSensor
+        if (id === "fan") return fanSensor
+        return sensorOf(id, series)
+    }
     Repeater {
         id: historyRepeater
         model: root.historyKinds
@@ -340,7 +349,7 @@ PlasmoidItem {
             required property var modelData
             statId: modelData.id
             series: modelData.series
-            sensor: root.historySensors[modelData.id + "." + modelData.series]
+            sensor: root.historySensor(modelData.id, modelData.series)
             wanted: root.historyWanted(modelData.id)
         }
         onItemAdded: root.historyItems = historyList()
@@ -599,21 +608,10 @@ PlasmoidItem {
     // The settings the registry's formatters read (Metrics.js is a pure library: it cannot see root's
     // properties). Every text and width binding reads this property, so it re-evaluates when one changes.
     readonly property var textCtx: ({ useF: useF, netBits: netBits })
-    // Thin wrappers for the popup rows: the formatters live in Metrics.js (M.FORMATS); the settings they
+    // Thin wrappers for the per-battery lines: the formatters live in Metrics.js (M.FORMATS); the settings they
     // need come in through textCtx, read here so the calling binding re-evaluates when they change.
     function pct(v)  { return M.FORMATS.pct(v) }
-    function temp(v) { return M.FORMATS.temp(v, textCtx) }
-    function gib(v)  { return M.FORMATS.gib(v) }
     function wh(v)   { return M.FORMATS.wh(v) }
-    function rate(v) { return M.FORMATS.rate(v, textCtx) }
-    function bytesText(v) { return M.FORMATS.bytes(v) }
-    function ghzNumber(v) { return M.FORMATS.ghz(v) }
-    function freq(v) { return M.FORMATS.freq(v) }
-    function rpmText(v) { return M.render(M.byId("fan").popup.rows[0].value, { value: v }, textCtx) }
-    // The popup's battery row: the percentage, the state arrow and the energy of all batteries.
-    function batRowText() {
-        return M.render(M.byId("bat").popup.rows[0].value, { percent: batPercent, state: batState, energy: batEnergyTotal() }, textCtx)
-    }
     // Hours as "3h 12m" or "45m"; empty when it cannot be estimated.
     function hoursText(hours) {
         if (!isFinite(hours) || hours < 0 || hours > 99) return ""
@@ -631,9 +629,6 @@ PlasmoidItem {
     // evaluates an alert or a scale reads this property, so it re-evaluates when the warning temperature changes.
     // (A peak step also needs barChart and graph flags; stepPeak() reads them when it runs.)
     readonly property var limitCtx: ({ warnTempC: warnTempC })
-    // The popup's "max core" temperature is highlighted by its own value (the registry's row alert), so the
-    // colour always matches the number shown next to it.
-    readonly property bool tempHot: M.byId("temp").popup.rows[1].alert({ max: tempMax.value }, limitCtx)
 
     // Every shown stat, in the user's order, as the panel writes it (also the ones hidden by the maximum length).
     function tooltipText() {
@@ -701,7 +696,7 @@ PlasmoidItem {
     function statPopupOn(id) {
         var m = M.byId(id)
         if (!m || !Plasmoid.configuration[m.keys.popup]) return false
-        return id === "bat" ? hasBattery : (id === "fan" ? hasFan : true)
+        return M.popupAvailable(m, popupFlags(id))
     }
     function shownIds() {
         var ids = []
@@ -809,15 +804,19 @@ PlasmoidItem {
     // The values a stat's templates read, live (keys as in the registry's templates).
     function statVals(id) {
         switch (id) {
-        case "cpu":  return { value: cpuUsage.value }
-        case "ram":  return { value: memPercent.value }
-        case "temp": return { value: tempAvg.value }
-        case "freq": return { value: freqAvg.value }
-        case "net":  return { down: netDown.value, up: netUp.value }
         case "bat":  return { percent: batPercent, state: batState }
         case "fan":  return { value: fanRpm }
         }
-        return {}
+        return sensorVals(id)
+    }
+    // The values of a plain-sensor stat that the panel text, alert and scale read, under the registry's sensor
+    // names (a sensor that is switched off reports undefined). Popup-only sensors are left out, so their updates
+    // do not re-evaluate the panel bindings.
+    function sensorVals(id) {
+        var vals = {}
+        var names = M.panelSensorNames(M.byId(id))
+        for (var i = 0; i < names.length; ++i) vals[names[i]] = sensorValue(id, names[i])
+        return vals
     }
     // The text of a stat in the panel, for the current step (compact or full) and orientation, from the
     // registry's templates. On a vertical panel the caption line is always kept, so it is easy to tell
@@ -1257,24 +1256,44 @@ PlasmoidItem {
     // ---- popup ----
     // Built from the user's order: one block per stat (its rows plus its graph). The name column has
     // a fixed width, so values line up from one block to the next.
-    TextMetrics { id: mPopupLabel; font: Kirigami.Theme.defaultFont; text: "CPU temp (max core)" }
-    readonly property real popupLabelWidth: mPopupLabel.width
-
-    function popupShown(id) {
-        switch (id) {
-        case "cpu":  return popupCpu
-        case "ram":  return popupMemory
-        case "temp": return popupTempAvg || popupTempMax || popupCores
-        case "freq": return popupFreq
-        case "net":  return popupNet
-        case "bat":  return popupBatShown
-        case "fan":  return popupFanShown
+    // The name column is as wide as the widest label of the registry's popup rows (one TextMetrics per label,
+    // read inside the binding so it follows a font change).
+    property var popupLabelItems: []
+    readonly property var popupLabelList: M.popupLabels(M.METRICS)
+    Instantiator {
+        id: popupLabelInst
+        model: root.popupLabelList
+        delegate: TextMetrics {
+            required property string modelData
+            font: Kirigami.Theme.defaultFont
+            text: modelData
         }
-        return false
+        onObjectAdded: {
+            if (count !== root.popupLabelList.length) return
+            var items = []
+            for (var i = 0; i < count; ++i) items.push(objectAt(i))
+            root.popupLabelItems = items
+        }
+    }
+    readonly property real popupLabelWidth: {
+        var w = 0
+        for (var i = 0; i < popupLabelItems.length; ++i) w = Math.max(w, popupLabelItems[i].width)
+        return w
+    }
+
+    // Whether a stat has anything in the popup (its flags and the hardware it needs, from the registry).
+    function popupShown(id) {
+        var m = M.byId(id)
+        return !!m && M.popupOn(m, popupFlags(id))
+    }
+    // The stats shown in the popup, in the user's order.
+    function popupIds() {
+        var ids = []
+        for (var i = 0; i < statOrder.length; ++i) if (popupShown(statOrder[i])) ids.push(statOrder[i])
+        return ids
     }
     function anyPopupShown() {
-        for (var i = 0; i < statOrder.length; ++i) if (popupShown(statOrder[i])) return true
-        return false
+        return popupIds().length > 0
     }
 
     // One row: a name, then a bold value.
@@ -1283,9 +1302,21 @@ PlasmoidItem {
         property string name
         property string value
         property color valueColor: Kirigami.Theme.textColor
+        property bool fanIcon: false                        // the spinning fan icon before the value
         spacing: Kirigami.Units.largeSpacing
         PlasmaComponents.Label { text: popupRow.name; Layout.preferredWidth: root.popupLabelWidth }
-        PlasmaComponents.Label { text: popupRow.value; font.bold: true; color: popupRow.valueColor }
+        RowLayout {
+            spacing: Kirigami.Units.smallSpacing
+            Loader {
+                active: popupRow.fanIcon
+                visible: active
+                sourceComponent: FanIcon {
+                    level: root.fanLevel
+                    animate: root.fanAnimate
+                }
+            }
+            PlasmaComponents.Label { text: popupRow.value; font.bold: true; color: popupRow.valueColor }
+        }
     }
     // A graph under a stat's rows. Its data, scale and colours come from the same helpers the panel uses.
     component PopupGraph: Spark {
@@ -1303,63 +1334,87 @@ PlasmoidItem {
         lineColor: root.statLineColor(statId)
     }
 
-    function popupBlock(id) {
-        switch (id) {
-        case "cpu":  return cpuBlock
-        case "ram":  return ramBlock
-        case "temp": return tempBlock
-        case "freq": return freqBlock
-        case "net":  return netBlock
-        case "bat":  return batBlock
-        case "fan":  return fanBlock
+    // The values a popup row reads: every sensor of a plain stat (popup-only ones included), the live values of
+    // the others. Read inside the calling binding, so QML re-evaluates it.
+    function popupVals(id) {
+        var m = M.byId(id)
+        if (id === "bat") { var b = statVals(id); b.energy = batEnergyTotal(); return b }
+        if (m.source) return statVals(id)
+        var vals = {}
+        for (var name in m.sensors) vals[name] = sensorValue(id, name)
+        return vals
+    }
+    // The inputs of M.popupRowShown / M.popupGraphShown for a stat.
+    function popupFlags(id) {
+        var f = sensorFlags(id)
+        f.available = { hasBattery: hasBattery, hasFan: hasFan }
+        return f
+    }
+    function popupRowColor(id, row) {
+        if (row.alert === "panel") return statTextColor(id)
+        if (typeof row.alert === "function")
+            return row.alert(popupVals(id), limitCtx) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+        return Kirigami.Theme.textColor
+    }
+
+    // One registry row of a stat's popup.
+    component StatRow: PopupRow {
+        required property var modelData
+        property string statId
+        visible: M.popupRowShown(modelData, root.popupFlags(statId))
+        name: modelData.label
+        value: M.render(modelData.value, root.popupVals(statId), root.textCtx)
+        valueColor: root.popupRowColor(statId, modelData)
+        fanIcon: modelData.decoration === "fanIcon"
+    }
+    // The block of a stat: its registry rows and graph, the hooks between them, and the per-item lines.
+    component StatBlock: ColumnLayout {
+        id: blk
+        required property string statId
+        readonly property var entry: M.byId(statId)
+        readonly property int rowsBeforeGraph: M.popupRowsBeforeGraph(entry)
+        Repeater {
+            model: blk.entry.popup.rows.slice(0, blk.rowsBeforeGraph)
+            delegate: StatRow { statId: blk.statId }
+        }
+        Repeater {
+            model: blk.entry.popup.hooks || []
+            delegate: Loader {
+                required property string modelData
+                sourceComponent: root.hookComponent(modelData)
+                visible: item !== null && item.shown
+            }
+        }
+        PopupGraph {
+            statId: blk.statId
+            wanted: M.popupGraphShown(blk.entry, root.popupFlags(blk.statId))
+        }
+        Repeater {
+            model: blk.entry.popup.rows.slice(blk.rowsBeforeGraph)
+            delegate: StatRow { statId: blk.statId }
+        }
+        RepeatBlock {
+            statId: blk.statId
+            Layout.fillWidth: true
+        }
+    }
+
+    // Bespoke parts of a popup (registry popup.hooks), one component each; the Loader shows its item only while
+    // the item says `shown`, so an empty hook adds no layout spacing.
+    function hookComponent(name) {
+        switch (name) {
+        case "perBattery": return perBatteryHook
+        case "chargeRow":  return chargeRowHook
         }
         return null
     }
-
+    // One line per battery, only when "each battery separately" is chosen.
     Component {
-        id: cpuBlock
+        id: perBatteryHook
         ColumnLayout {
-            PopupRow { name: "CPU usage"; value: root.pct(cpuUsage.value) }
-            PopupGraph { statId: "cpu" }
-        }
-    }
-    Component {
-        id: ramBlock
-        ColumnLayout {
-            PopupRow {
-                name: "Memory"
-                value: root.gib(memUsed.value) + " / " + root.gib(memTotal.value) + " (" + root.pct(memPercent.value) + ")"
-            }
-            PopupGraph { statId: "ram" }
-        }
-    }
-    Component {
-        id: freqBlock
-        ColumnLayout {
-            PopupRow { name: "CPU frequency"; value: root.freq(freqAvg.value) }
-            PopupRow { name: "Min / max"; value: root.ghzNumber(freqMin.value) + " / " + root.ghzNumber(freqMax.value) + " GHz" }
-            PopupGraph { statId: "freq" }
-        }
-    }
-    Component {
-        id: netBlock
-        ColumnLayout {
-            PopupRow { name: "Download"; value: root.rate(netDown.value) + "  (" + root.bytesText(netDownTotal.value) + " total)" }
-            PopupRow { name: "Upload"; value: root.rate(netUp.value) + "  (" + root.bytesText(netUpTotal.value) + " total)" }
-            PopupGraph { statId: "net" }
-        }
-    }
-    Component {
-        id: batBlock
-        ColumnLayout {
-            PopupRow {
-                name: "Battery"
-                value: root.batRowText()
-                valueColor: root.statTextColor("bat")
-            }
-            // One line per battery, only when "each battery separately" is chosen.
+            readonly property bool shown: root.batSeparate && root.batterySources.length > 1
             Repeater {
-                model: (root.batSeparate && root.batterySources.length > 1) ? root.batterySources : []
+                model: parent.shown ? root.batterySources : []
                 delegate: PlasmaComponents.Label {
                     required property var modelData
                     readonly property var d: root.batteryData(modelData)
@@ -1370,90 +1425,63 @@ PlasmoidItem {
                           + (d["State"] === "Charging" ? "  ↑" : (d["State"] === "Discharging" ? "  ↓" : ""))
                 }
             }
-            PopupRow {
-                visible: root.batState !== 0
-                name: root.batState > 0 ? "Charging" : "Discharging"
-                value: root.batTimeText() !== "" ? root.batTimeText() + (root.batState > 0 ? " to full" : " left") : "estimating…"
-            }
-            PopupGraph { statId: "bat" }
         }
     }
+    // The charging / discharging row with the time to full or left.
     Component {
-        id: fanBlock
-        ColumnLayout {
-            RowLayout {
-                spacing: Kirigami.Units.largeSpacing
-                PlasmaComponents.Label { text: "Fan"; Layout.preferredWidth: root.popupLabelWidth }
-                RowLayout {
-                    spacing: Kirigami.Units.smallSpacing
-                    FanIcon {
-                        level: root.fanLevel
-                        animate: root.fanAnimate
+        id: chargeRowHook
+        PopupRow {
+            readonly property bool shown: root.batState !== 0
+            name: root.batState > 0 ? "Charging" : "Discharging"
+            value: root.batTimeText() !== "" ? root.batTimeText() + (root.batState > 0 ? " to full" : " left") : "estimating…"
+        }
+    }
+    // The per-item lines of a stat's popup (the temperature of each core): a header and a two-column grid, one
+    // line per item. Its sensors only exist while the popup is open (one per delegate).
+    component RepeatBlock: ColumnLayout {
+        id: rep
+        required property string statId
+        readonly property var spec: M.byId(statId).popup.repeat
+        // No lines (and so no sensors) unless the stat has them and their flag is on.
+        // The number of items comes from the sensor the registry names (spec.countSensor) of this stat.
+        readonly property var itemCount: spec ? root.sensorValue(statId, spec.countSensor) : undefined
+        readonly property bool on: !!spec && M.flagOn(spec.when, root.popupFlags(statId))
+        readonly property int count: on && root.isNum(rep.itemCount) ? Number(rep.itemCount) : 0
+        visible: count > 0
+        PlasmaComponents.Label {
+            Layout.topMargin: Kirigami.Units.smallSpacing
+            text: rep.spec ? rep.spec.header : ""
+            font.bold: true
+        }
+        GridLayout {
+            Layout.fillWidth: true
+            columns: 2
+            columnSpacing: Kirigami.Units.gridUnit * 2
+            rowSpacing: 0
+
+            Repeater {
+                model: rep.count
+
+                delegate: RowLayout {
+                    id: item
+                    required property int index
+                    Layout.fillWidth: true
+
+                    Sensors.Sensor {
+                        id: itemSensor
+                        sensorId: rep.spec.sensor.replace("{n}", item.index)
+                        updateRateLimit: root.refreshMs
                     }
-                    PlasmaComponents.Label { text: root.rpmText(root.fanRpm); font.bold: true }
-                }
-            }
-            PopupGraph { statId: "fan" }
-        }
-    }
-    Component {
-        id: tempBlock
-        ColumnLayout {
-            PopupRow {
-                visible: root.popupTempAvg
-                name: "CPU temp (avg)"
-                value: root.temp(tempAvg.value)
-                valueColor: root.statTextColor("temp")
-            }
-            PopupGraph { statId: "temp"; wanted: root.popupTempAvg }
-            PopupRow {
-                visible: root.popupTempMax
-                name: "CPU temp (max core)"
-                value: root.temp(tempMax.value)
-                valueColor: root.tempHot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-            }
+                    readonly property bool hot: rep.spec.alert({ value: itemSensor.value }, root.limitCtx)
 
-            // ---- per-core temperatures ----
-            // Sensors are created per delegate, so they only exist while the popup is open.
-            // Threads of one physical core (hyperthreading) report the same temperature.
-            PlasmaComponents.Label {
-                visible: root.popupCores && perCore.count > 0
-                Layout.topMargin: Kirigami.Units.smallSpacing
-                text: "Per core"
-                font.bold: true
-            }
-            GridLayout {
-                visible: root.popupCores && perCore.count > 0
-                Layout.fillWidth: true
-                columns: 2
-                columnSpacing: Kirigami.Units.gridUnit * 2
-                rowSpacing: 0
-
-                Repeater {
-                    id: perCore
-                    model: root.popupCores && root.isNum(coreCount.value) ? Number(coreCount.value) : 0
-
-                    delegate: RowLayout {
-                        id: coreRow
-                        required property int index
+                    PlasmaComponents.Label {
+                        text: rep.spec.label.replace("{n}", item.index + 1)
                         Layout.fillWidth: true
-
-                        Sensors.Sensor {
-                            id: coreTemp
-                            sensorId: "cpu/cpu" + coreRow.index + "/temperature"
-                            updateRateLimit: root.refreshMs
-                        }
-                        readonly property bool hot: root.isNum(coreTemp.value) && coreTemp.value >= root.warnTempC
-
-                        PlasmaComponents.Label {
-                            text: "Core " + (coreRow.index + 1)
-                            Layout.fillWidth: true
-                        }
-                        PlasmaComponents.Label {
-                            text: root.temp(coreTemp.value)
-                            font.bold: true
-                            color: coreRow.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-                        }
+                    }
+                    PlasmaComponents.Label {
+                        text: M.render(rep.spec.value, { value: itemSensor.value }, root.textCtx)
+                        font.bold: true
+                        color: item.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                     }
                 }
             }
@@ -1464,13 +1492,11 @@ PlasmoidItem {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 14
 
         Repeater {
-            model: root.statOrder
-            delegate: Loader {
+            model: root.popupIds()
+            delegate: StatBlock {
                 required property string modelData
+                statId: modelData
                 Layout.fillWidth: true
-                active: root.popupShown(modelData)
-                visible: active
-                sourceComponent: root.popupBlock(modelData)
             }
         }
 

@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
 import org.kde.plasma.plasmoid
+import "Metrics.js" as M
 
 // A table with one row per stat. Rows can be dragged (or moved with the arrow buttons) to set the
 // order used in the panel strip and the popup. Each row has Show and Graph checkboxes for the
@@ -81,15 +82,7 @@ KCM.SimpleKCM {
     property bool cfg_fanAnimateDefault
 
     // ---- what each stat is called and which settings belong to it ----
-    readonly property var stats: [
-        { id: "cpu",  name: i18n("CPU usage"),       show: "showCpu",  graph: "graphPanelCpu",  popup: "popupCpu",      popupGraph: "graphPopupCpu" },
-        { id: "ram",  name: i18n("Memory"),          show: "showRam",  graph: "graphPanelRam",  popup: "popupMemory",   popupGraph: "graphPopupRam" },
-        { id: "temp", name: i18n("CPU temperature"), show: "showTemp", graph: "graphPanelTemp", popup: "popupTempAvg",  popupGraph: "graphPopupTemp" },
-        { id: "freq", name: i18n("CPU frequency"),   show: "showFreq", graph: "graphPanelFreq", popup: "popupFreq",     popupGraph: "graphPopupFreq" },
-        { id: "net",  name: i18n("Network speed"),   show: "showNet",  graph: "graphPanelNet",  popup: "popupNet",      popupGraph: "graphPopupNet" },
-        { id: "bat",  name: i18n("Battery"),         show: "showBat",  graph: "graphPanelBat",  popup: "popupBat",      popupGraph: "graphPopupBat" },
-        { id: "fan",  name: i18n("Fan speed"),       show: "showFan",  graph: "graphPanelFan",  popup: "popupFan",      popupGraph: "graphPopupFan" }
-    ]
+    readonly property var stats: M.settingsRows()
     function statInfo(id) {
         for (var i = 0; i < stats.length; ++i) if (stats[i].id === id) return stats[i]
         return stats[0]
@@ -97,10 +90,11 @@ KCM.SimpleKCM {
 
     // Detected hardware, written by the widget; read live (no cfg_ property, so the dialog never writes them back).
     readonly property int batteryCount: Plasmoid.configuration.batteryCount
-    readonly property int fanCount: Plasmoid.configuration.fanCount
-    readonly property bool hasBat: batteryCount > 0
-    readonly property bool hasFan: fanCount > 0
-    function rowAvailable(id) { return id === "bat" ? hasBat : (id === "fan" ? hasFan : true) }
+    // A stat that needs hardware is available when the widget found at least one device (its hidden count key).
+    function rowAvailable(id) {
+        var k = M.hardwareKey(id)
+        return k === "" || Plasmoid.configuration[k] > 0
+    }
     // Position among the rows that are actually shown, so stripes alternate even when Battery or Fan is hidden.
     function visiblePosition(index) {
         var n = 0
@@ -416,7 +410,7 @@ KCM.SimpleKCM {
         }
 
         CfgCheckLabelled {
-            visible: page.hasFan
+            visible: page.rowAvailable("fan")
             Layout.topMargin: Kirigami.Units.largeSpacing
             key: "fanAnimate"
             text: i18n("Animate fan icon based on fan speed")

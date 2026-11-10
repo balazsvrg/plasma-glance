@@ -159,29 +159,40 @@ check("the reserve items come from the registry's entries", "M.METRICS.length" i
 check("statCompact asks the registry which stats have a shorter vertical form", "m.panel.verticalCompact" in MAIN_QML)
 check("the icon width comes from the registry's decoration", 'm.panel.decoration === "fanIcon"' in MAIN_QML)
 check("statAlert delegates to M.alertOf", "M.alertOf(m, statVals(id), limitCtx)" in MAIN_QML)
-check("the popup's max-core alert is the registry's row alert", 'M.byId("temp").popup.rows[1].alert(' in MAIN_QML)
+check("a popup row's alert is the registry's (no hand-written tempHot)", "tempHot" not in MAIN_QML and "row.alert(popupVals(id), limitCtx)" in MAIN_QML)
 check("limitCtx carries exactly the warning temperature", re.search(r'limitCtx: \(\{ warnTempC: warnTempC \}\)', MAIN_QML) is not None)
 check("statYTo asks the registry for the scale end", "M.scaleEnd(m, limitCtx, M.followsData(m) ? peakOf(id) : 0)" in MAIN_QML)
 check("statYFrom asks the registry", "M.scaleFrom(m)" in MAIN_QML)
-check("the peak step is the registry's", "M.stepPeak(M.byId(id), prev, scaleVals(id), ctx, refreshMs)" in MAIN_QML)
-# The three triggers of a peak step stay where the old per-stat code ran, and nowhere else.
-equal("peak triggers", sorted(re.findall(r'stepPeak\("(\w+)"\)', MAIN_QML)), ["fan", "freq", "net"])
-check("freq steps from the maximum-frequency sensor", re.search(r'id: freqMax.*?onValueChanged: root\.stepPeak\("freq"\)', MAIN_QML, re.S) is not None)
-check("net steps from the download sensor", re.search(r'id: netDown.*?onValueChanged: root\.stepPeak\("net"\)', MAIN_QML, re.S) is not None)
+check("the peak step is the registry's", "M.stepPeak(M.byId(id), prev, statVals(id), ctx, refreshMs)" in MAIN_QML)
+# A peak step has two kinds of trigger: the sensor the registry names as the scale's `trigger` (one generic
+# handler in the sensor delegate) and the fan speed, which is not a sensor.
+equal("literal peak triggers", sorted(re.findall(r'stepPeak\("(\w+)"\)', MAIN_QML)), ["fan"])
 check("fan steps from the fan speed", 'onFanRpmChanged: root.stepPeak("fan")' in MAIN_QML)
-# scaleVals() hands each following scale the keys the registry says it watches.
-sv = re.search(r'function scaleVals\(id\) \{(.*?)\n    \}', MAIN_QML, re.S).group(1)
-watched = {sid: sorted(re.findall(r'(\w+):', body)) for sid, body in re.findall(r'case "(\w+)":\s+return \{(.*?)\}', sv)}
-equal("scaleVals covers exactly the following scales", sorted(watched), run(M, "METRICS.filter(followsData).map(function(m){return m.id}).sort()"))
-for sid, keys in watched.items():
-    equal("scaleVals of %s supplies the keys its scale observes" % sid, keys, sorted(run(M, "byId(%s).scale.observe.keys" % json.dumps(sid))))
+check("the sensor delegate steps the peak of the stat whose scale names it",
+      "M.byId(modelData.id).scale.trigger === modelData.name" in MAIN_QML and "onValueChanged: if (isTrigger) root.stepPeak(modelData.id)" in MAIN_QML)
+equal("triggers of the following scales", run(M, "METRICS.filter(followsData).map(function(m){return [m.id, m.scale.trigger]})"),
+      [["freq", "max"], ["net", "down"], ["fan", None]])
+for sid in ("freq", "net"):
+    equal("the trigger of %s is one of its sensors" % sid, run(M, "byId('%s').scale.trigger in byId('%s').sensors" % (sid, sid)), True)
+equal("a scale without a sensor has no trigger", [run(M, "byId('%s').scale.trigger" % x) for x in ("cpu", "ram", "temp", "bat", "fan")], [None] * 5)
+# statVals() hands a following scale the keys the registry says it watches (plain sensors: their names; fan: its own case).
+for sid in run(M, "METRICS.filter(followsData).map(function(m){return m.id})"):
+    keys = run(M, "byId(%s).scale.observe.keys" % json.dumps(sid))
+    sensors = run(M, "Object.keys(byId(%s).sensors)" % json.dumps(sid))
+    check("the scale of %s watches keys that statVals supplies" % sid,
+          all(k in sensors for k in keys) if sensors else keys == ["value"])
 # One History per registry series, created from the registry (not one hand-written item per stat).
 check("the histories come from the registry's series", "model: root.historyKinds" in MAIN_QML and "M.METRICS[i].series[j]" in MAIN_QML)
 check("a history is wanted by the stat's graph and shown flags", "wanted: root.historyWanted(modelData.id)" in MAIN_QML)
-hs = re.search(r'historySensors: \(\{(.*?)\}\)', MAIN_QML, re.S).group(1)
-equal("every registry series has a sensor object for its history",
-      sorted(re.findall(r'"(\w+\.\w+)":', hs)),
-      sorted(run(M, "(function(){var o=[];METRICS.forEach(function(m){m.series.forEach(function(s){o.push(m.id+'.'+s)})});return o})()")))
+check("no hand-written historySensors map is left", "historySensors" not in MAIN_QML)
+check("a plain-sensor series is the sensor of the same name", "return sensorOf(id, series)" in MAIN_QML)
+check("battery and fan feed their history through small QtObjects",
+      'if (id === "bat") return batSensor' in MAIN_QML and 'if (id === "fan") return fanSensor' in MAIN_QML)
+for mid in run(M, "METRICS.filter(function(m){return Object.keys(m.sensors).length}).map(function(m){return m.id})"):
+    series = run(M, "byId(%s).series" % json.dumps(mid))
+    sensors = run(M, "Object.keys(byId(%s).sensors)" % json.dumps(mid))
+    check("every series of %s names one of its sensors" % mid, all(x in sensors for x in series))
+equal("the stats without plain sensors are battery and fan", run(M, "METRICS.filter(function(m){return !Object.keys(m.sensors).length}).map(function(m){return m.id})"), ["bat", "fan"])
 for gone in ("readonly property bool gpCpu", "readonly property bool gdFan", "readonly property bool gpNet"):
     check("main.qml no longer has `%s` (the graph flags are read through the registry's keys)" % gone, gone not in MAIN_QML)
 check("statGraph reads the registry's gp key", "Plasmoid.configuration[m.keys.gp]" in MAIN_QML)
@@ -194,13 +205,22 @@ fmt_src = re.search(r'var FORMATS = \{(.*?)\n\}\n', METRICS_JS, re.S).group(1) +
 ctx_keys = sorted(set(re.findall(r'ctx(?: && ctx)?\.(\w+)', fmt_src)))
 equal("the formatters read only these settings", ctx_keys, ["netBits", "useF"])
 equal("main.qml puts exactly those into textCtx", sorted(re.findall(r'(\w+): \1', re.search(r'textCtx: \(\{(.*?)\}\)', MAIN_QML).group(1))), ctx_keys)
-# The values main.qml feeds each stat's templates: every key a template reads must be supplied.
+# The values main.qml feeds each stat's templates: every key a template reads must be supplied. A plain-sensor stat
+# gets every sensor of its entry under the sensor's name (sensorVals); battery and fan have their own cases.
 sv_src = re.search(r'function statVals\(id\) \{(.*?)\n    \}', MAIN_QML, re.S).group(1)
 supplied = {sid: sorted(re.findall(r'(\w+):', body)) for sid, body in re.findall(r'case "(\w+)":\s+return \{(.*?)\}', sv_src)}
+equal("statVals has its own case for exactly battery and fan", sorted(supplied), ["bat", "fan"])
+check("statVals falls back to the stat's sensors", "return sensorVals(id)" in sv_src)
+check("sensorVals names each value after its registry sensor",
+      "M.panelSensorNames(M.byId(id))" in MAIN_QML and "vals[names[i]] = sensorValue(id, names[i])" in MAIN_QML)
 for stat in run(M, "DEFAULT_ORDER"):
     used = run(M, "(function(){var p=byId(%s).panel, t=[p.full,p.compact].concat(p.vertical,p.verticalCompact||[]), k={}; "
                   "t.forEach(function(x){(x.match(/\\{(\\w+)/g)||[]).forEach(function(y){k[y.slice(1)]=1})}); return Object.keys(k).sort()})()" % json.dumps(stat))
-    equal("statVals of %s supplies the keys its templates read" % stat, supplied.get(stat), used)
+    sensors = run(M, "Object.keys(byId(%s).sensors).sort()" % json.dumps(stat))
+    if stat in supplied:
+        equal("statVals of %s supplies the keys its templates read" % stat, supplied[stat], used)
+    else:
+        check("the sensors of %s supply the keys its templates read (%s)" % (stat, used), all(k in sensors for k in used))
     equal("the sample of %s has the same keys" % stat, sorted(run(M, "Object.keys(byId(%s).panel.sample)" % json.dumps(stat))), used)
 # The wrappers the popup keeps call formatters that exist.
 for f in set(re.findall(r'M\.FORMATS\.(\w+)', MAIN_QML)):
@@ -279,6 +299,27 @@ equal("gating: freq max follows show or popup, min popup and expanded", [active(
 equal("gating: temp max follows its option", [active("temp", "max", expanded=True), active("temp", "max", expanded=True, opts={"popupMax": True}),
       active("temp", "max", opts={"popupMax": True})], [False, True, False])
 
+# The 14 hand-written `enabled:` expressions of v0.9.2 main.qml, as functions of the flags (show, popup, expanded and
+# the two temperature options), compared with the registry's gates over every combination.
+OLD_GATES = {
+    "cpu.value": lambda f: f["show"] or f["popup"], "ram.value": lambda f: f["show"] or f["popup"],
+    "ram.used": lambda f: f["popup"] and f["expanded"], "ram.total": lambda f: f["popup"] and f["expanded"],
+    "temp.value": lambda f: f["show"] or f["popup"], "temp.max": lambda f: f["popupMax"] and f["expanded"],
+    "temp.coreCount": lambda f: f["popupCores"] and f["expanded"],
+    "freq.value": lambda f: f["show"] or f["popup"], "freq.min": lambda f: f["popup"] and f["expanded"],
+    "freq.max": lambda f: f["show"] or f["popup"],
+    "net.down": lambda f: f["show"] or f["popup"], "net.up": lambda f: f["show"] or f["popup"],
+    "net.downTotal": lambda f: f["popup"] and f["expanded"], "net.upTotal": lambda f: f["popup"] and f["expanded"],
+}
+equal("the registry lists exactly the 14 plain sensors of v0.9.2", sorted(run(M, "sensorKinds().map(function(k){return k.id+'.'+k.name})")), sorted(OLD_GATES))
+combos = [dict(show=a, popup=b, expanded=c, popupMax=d, popupCores=e) for a in (False, True) for b in (False, True)
+          for c in (False, True) for d in (False, True) for e in (False, True)]
+got = run(M, "(function(){var cs=%s, out={};sensorKinds().forEach(function(k){out[k.id+'.'+k.name]=cs.map(function(c){"
+             "return sensorActive(byId(k.id).sensors[k.name],{show:c.show,popup:c.popup,expanded:c.expanded,opts:{popupMax:c.popupMax,popupCores:c.popupCores}})})});return out})()"
+          % json.dumps(combos))
+for name, old in OLD_GATES.items():
+    equal("gate of %s equals the v0.9.2 enabled expression in all 32 flag combinations" % name, got[name], [bool(old(c)) for c in combos])
+
 # ---------------------------------------------------------------- 4. structure
 print("4. structure")
 ids = run(M, "METRICS.map(function(m){return m.id})")
@@ -337,23 +378,27 @@ print("      main.xml keys outside the descriptors:")
 for k in unclaimed:
     print("        %-16s %s" % (k, UNCLAIMED.get(k, "?")))
 
-# Labels agree with the two places that carry them today.
-page_names = dict(re.findall(r'\{ id: "(\w+)",\s+name: i18n\("([^"]+)"\)', METRICS_PAGE))
-notice_names = dict(re.findall(r'case "(\w+)":\s+return i18n\("([^"]+)"\)', NOTICE))
-for mid in ids:
-    name = run(M, "byId('%s').name" % mid)
-    equal("name of %s equals the Metrics table label" % mid, name, page_names.get(mid))
-    equal("name of %s equals the LengthNotice label" % mid, name, notice_names.get(mid))
 # Sensor ids: the registry's set equals the literal sensorId strings in main.qml (per-core and fan ids are patterns).
 qml_ids = set(re.findall(r'sensorId: "([^"]+)"', MAIN_QML))
 reg_ids = set()
 for mid in ids:
     for s in run(M, "Object.keys(byId('%s').sensors).map(function(k){return byId('%s').sensors[k].id})" % (mid, mid)):
         reg_ids.add(s)
-reg_ids.add("cpu/cpu")      # per-core: sensor "cpu/cpu" + N + "/temperature", described by popup.repeat.sensor
-equal("sensor ids equal main.qml's sensorId literals", sorted(reg_ids), sorted(qml_ids))
+# (per-core sensors, "cpu/cpu" + N + "/temperature", are described by popup.repeat.sensor and stay in the popup)
+equal("main.qml spells no registry sensor id itself (they come from the sensor delegate)", sorted(reg_ids & qml_ids), [])
+equal("main.qml has no sensorId literal at all (per-core ids come from popup.repeat.sensor)", sorted(qml_ids), [])
+check("the sensor delegate takes its id from the registry", "sensorId: entry.id" in MAIN_QML)
+check("the sensors come from the registry", "readonly property var sensorKinds: M.sensorKinds()" in MAIN_QML and "model: root.sensorKinds" in MAIN_QML)
+check("trigger sensors catch up once they all exist", "if (count !== root.sensorKinds.length) return" in MAIN_QML and "root.stepTriggerPeaks()" in MAIN_QML)
+check("the sensor map is built once, not per added sensor", MAIN_QML.count("root.sensorItems = sensorMap()") == 1 and "if (count !== root.sensorKinds.length) return\n            root.sensorItems = sensorMap()" in MAIN_QML)
+equal("panel values leave out the popup-only sensors", run(M, "METRICS.map(function(m){return m.id+':'+panelSensorNames(m).join(',')}).join(' ')"),
+      "cpu:value ram:value temp:value freq:value,max net:down,up bat: fan:")
+check("every key a panel template, alert or scale reads is a panel sensor", run(M, "METRICS.every(function(m){var n=panelSensorNames(m);var ks=m.scale&&m.scale.observe?m.scale.observe.keys:[];return ks.every(function(k){return !m.sensors[k]||n.indexOf(k)>=0})})"))
+equal("only the core count skips the refresh rate limit", run(M, "sensorKinds().filter(function(k){return byId(k.id).sensors[k.name].noRateLimit}).map(function(k){return k.id+'.'+k.name}).join()"), "temp.coreCount")
+check("the trigger test is precomputed per sensor", "readonly property bool isTrigger" in MAIN_QML and "onValueChanged: if (isTrigger)" in MAIN_QML)
 equal("per-core sensor pattern", run(M, "byId('temp').popup.repeat.sensor"), "cpu/cpu{n}/temperature")
-check("main.qml builds the per-core id the same way", '"cpu/cpu" + coreRow.index + "/temperature"' in MAIN_QML)
+check("main.qml builds the per-item id from the registry pattern", 'sensorId: rep.spec.sensor.replace("{n}", item.index)' in MAIN_QML)
+check("per-item labels count from 1", 'rep.spec.label.replace("{n}", item.index + 1)' in MAIN_QML)
 equal("fan discovery pattern equals main.qml's", "/" + run(M, "byId('fan').source.pattern").replace("/", "\\/") + "/",
       "/" + re.search(r'if \(/(.*?)/\.test\(id\)\)', MAIN_QML).group(1) + "/")
 # Constants of the battery refresh and the fan discovery, as written in main.qml.
@@ -362,7 +407,7 @@ for what, snippet in (("battery refresh", "interval: 5000"),
                       ("fan retry", "fanScan.interval = 3000")):
     check("main.qml still says: %s" % what, snippet in MAIN_QML)
 equal("registry net scale", run(M, "byId('net').scale"),
-      {"from": 0, "mode": "decay", "floor": 100000, "decay": 0.99, "needsGraph": True,
+      {"from": 0, "mode": "decay", "floor": 100000, "decay": 0.99, "needsGraph": True, "trigger": "down",
        "observe": {"keys": ["down", "up"], "combine": "max", "barCombine": "sum"}})
 equal("registry fan source numbers", run(M, "[byId('fan').source.firstScanMs,byId('fan').source.retryMs,byId('fan').source.maxAttempts]"), [800, 3000, 10])
 equal("registry battery interval", run(M, "byId('bat').source.intervalMs"), 5000)
@@ -516,6 +561,112 @@ for stat in ("freq", "fan"):
         compared += len(want)
         equal("%s peak, sequence '%s'" % (stat, name), got, want)
 check("scale golden data was compared (%d values)" % compared, compared > 3000)
+
+# ---- popup descriptors (P4 step 1: the helpers the generic popup will use) ----
+pflags = lambda **k: json.dumps(dict(dict(popup=False, opts={}, available={"hasBattery": True, "hasFan": True}), **k))
+pon = lambda sid, **k: run(M, "popupOn(byId(%s),%s)" % (json.dumps(sid), pflags(**k)))
+equal("popupOn follows the popup flag", [pon("cpu"), pon("cpu", popup=True)], [False, True])
+equal("temp has a popup when any of its options is on", [pon("temp"), pon("temp", opts={"popupMax": True}), pon("temp", opts={"popupCores": True}),
+      pon("temp", popup=True), pon("temp", opts={"separate": True})], [False, True, True, True, False])
+equal("battery and fan popups also need the hardware", [pon("bat", popup=True, available={"hasBattery": False}), pon("bat", popup=True),
+      pon("fan", popup=True, available={"hasFan": False}), pon("fan", popup=True)], [False, True, False, True])
+equal("popup hardware checks", run(M, "METRICS.filter(function(m){return m.popup.available}).map(function(m){return m.id+':'+m.popup.available}).join()"), "bat:hasBattery,fan:hasFan")
+equal("popup flag names per stat", run(M, "METRICS.map(function(m){return m.id+':'+popupFlagNames(m).join('+')}).join(' ')"),
+      "cpu: ram: temp:popup+popupMax+popupCores freq: net: bat: fan:")
+equal("temp rows follow their flags", [run(M, "popupRowShown(byId('temp').popup.rows[%d],%s)" % (i, pflags(**k)))
+      for i, k in ((0, {}), (0, {"popup": True}), (1, {}), (1, {"opts": {"popupMax": True}}))], [False, True, False, True])
+equal("temp graph needs the average row", [run(M, "popupGraphShown(byId('temp'),%s)" % pflags(**k)) for k in ({}, {"popup": True})], [False, True])
+equal("a stat without graphWhen shows its graph with its popup", run(M, "popupGraphShown(byId('cpu'),%s)" % pflags()), True)
+equal("every row's flag is the popup flag or one of the stat's options", run(M, "METRICS.every(function(m){return popupFlagNames(m).every(function(f){return f==='popup'||(m.keys.options&&f in m.keys.options)})})"), True)
+equal("the widest popup label is the one the name column is sized from", run(M, "popupLabels(METRICS).sort(function(a,b){return b.length-a.length})[0]"), "CPU temp (max core)")
+check("every popup row alert is 'panel' or a function", run(M, "METRICS.every(function(m){return m.popup.rows.every(function(r){return r.alert===undefined||r.alert==='panel'||typeof r.alert==='function'})})"))
+
+# ---- generic popup block (P4 step 2) ----
+for blk in ("cpuBlock", "ramBlock", "freqBlock", "netBlock", "fanBlock"):
+    check("main.qml has no %s" % blk, "id: " + blk not in MAIN_QML)
+check("the stat block renders the registry's rows around the graph", "popup.rows.slice(0, blk.rowsBeforeGraph)" in MAIN_QML
+      and "popup.rows.slice(blk.rowsBeforeGraph)" in MAIN_QML
+      and "M.render(modelData.value, root.popupVals(statId), root.textCtx)" in MAIN_QML)
+check("the stat block's rows, graph and per-item lines use the registry's flags", "M.popupRowShown(modelData, root.popupFlags(statId))" in MAIN_QML
+      and "M.flagOn(spec.when, root.popupFlags(statId))" in MAIN_QML
+      and "M.popupGraphShown(blk.entry, root.popupFlags(blk.statId))" in MAIN_QML)
+check("the block takes its stat id as a required property, not from its parent", "required property string statId" in MAIN_QML
+      and "blockStatId" not in MAIN_QML and "parent.blockStatId" not in MAIN_QML)
+check("main.qml has no popupBlock switch and no batBlock", "function popupBlock" not in MAIN_QML and "id: batBlock" not in MAIN_QML)
+check("the popup is a Repeater of StatBlocks over the shown stats", "model: root.popupIds()" in MAIN_QML and "delegate: StatBlock {" in MAIN_QML)
+equal("hook names in the registry equal the components main.qml has", run(M, "METRICS.reduce(function(a,m){return a.concat(m.popup.hooks||[])},[])"), ["perBattery", "chargeRow"])
+for hk in ("perBattery", "chargeRow"):
+    check("main.qml has a component for hook " + hk, 'case "%s":' % hk in MAIN_QML and "id: %sHook" % hk in MAIN_QML)
+check("hooks sit between the rows and the graph and show only when their item says so", "popup.hooks || []" in MAIN_QML and "visible: item !== null && item.shown" in MAIN_QML)
+check("the battery popup row gets the summed energy", 'b.energy = batEnergyTotal()' in MAIN_QML)
+check("main.qml has no tempBlock", "id: tempBlock" not in MAIN_QML)
+equal("rows before the graph", run(M, "METRICS.map(function(m){return m.id+':'+popupRowsBeforeGraph(m)}).join(' ')"), "cpu:1 ram:1 temp:1 freq:2 net:2 bat:1 fan:1")
+check("the fan icon comes from the registry's row decoration", 'fanIcon: modelData.decoration === "fanIcon"' in MAIN_QML)
+check("popup values come from the sensors (all of them) or the live values", "if (m.source) return statVals(id)" in MAIN_QML
+      and "for (var name in m.sensors) vals[name] = sensorValue(id, name)" in MAIN_QML)
+equal("popup rows render the v0.9.2 text", run(M, "(function(){var v={cpu:{value:12.4},ram:{value:47.6,used:8e9,total:16e9},freq:{value:2750,min:800,max:4500},"
+      "net:{down:123456,up:7890,downTotal:5e9,upTotal:1e9},fan:{value:2400}},c={useF:false,netBits:false};"
+      "return ['cpu','ram','freq','net','fan'].map(function(i){return byId(i).popup.rows.map(function(r){return render(r.value,v[i],c)})})})()"),
+      [["12%"], ["7.5 GiB / 14.9 GiB (48%)"], ["2.8 GHz", "0.8 / 4.5 GHz"], ["123 KB/s  (5.0 GB total)", "7.9 KB/s  (1.0 GB total)"], ["2400 RPM"]])
+
+# ---- popup visibility and label width from the registry (P4 step 5) ----
+check("popupShown asks the registry", "return !!m && M.popupOn(m, popupFlags(id))" in MAIN_QML)
+for n in ("popupCpu", "popupMemory", "popupTempAvg", "popupTempMax", "popupFreq", "popupNet", "popupCores"):
+    check("main.qml has no per-stat %s property" % n, "property bool %s:" % n not in MAIN_QML)
+check("the popup name column is sized from the registry's labels", "model: root.popupLabelList" in MAIN_QML
+      and "M.popupLabels(M.METRICS)" in MAIN_QML
+      and '"CPU temp (max core)"' not in MAIN_QML)
+for f in ("temp", "gib", "rate", "bytesText", "ghzNumber", "freq"):
+    check("the unused popup wrapper %s is gone" % f, "function %s(v)" % f not in MAIN_QML)
+
+# ---- review fixes: behaviour checks ----
+equal("every sensor gate is one of the known ones", run(M, "METRICS.every(function(m){return Object.keys(m.sensors).every(function(n){var g=m.sensors[n].gate;return g==='show'||g==='show|popup'||g==='popup'||g.indexOf('opt:')===0})})"), True)
+equal("panel sensors are exactly those with a show gate", run(M, "(function(){var m={sensors:{a:{gate:'show'},b:{gate:'show|popup'},c:{gate:'popup'},d:{gate:'showOnly'},e:{gate:'opt:x'}}};return panelSensorNames(m)})()"), ["a", "b"])
+# Every key a popup row template reads is supplied by the popup values (sensors of a plain stat, source fields otherwise).
+supply = {"bat": ["percent", "state", "energy"], "fan": ["value"]}
+for m in run(M, "METRICS.map(function(m){return {id:m.id,plain:!m.source,sensors:Object.keys(m.sensors),rows:m.popup.rows.map(function(r){return r.value}).concat(m.popup.repeat?[m.popup.repeat.value]:[])}})"):
+    have = m["sensors"] if m["plain"] else supply[m["id"]]
+    used = set(k for t in m["rows"] for k in re.findall(r"\{(\w+)", t))
+    check("popup values of %s supply the keys its rows read (%s)" % (m["id"], sorted(used)), used <= set(have))
+check("the popup stat list is a function of the order and popupShown", "function popupIds()" in MAIN_QML)
+check("the popup label list is computed once", MAIN_QML.count("M.popupLabels(M.METRICS)") == 1)
+check("the orphaned battery-row comment is gone", "The popup's battery row:" not in MAIN_QML)
+
+# ---- P5: settings pages and the notice from the registry ----
+CFG_QML = open(os.path.join(UI, "configMetrics.qml"), encoding="utf-8").read()
+NOTICE_QML = open(os.path.join(UI, "LengthNotice.qml"), encoding="utf-8").read()
+rows = run(M, "settingsRows()")
+equal("settings rows follow the registry order", [r["id"] for r in rows], run(M, "METRICS.map(function(m){return m.id})"))
+equal("a settings row carries the registry's names and the four keys",
+      [r for r in rows if r["id"] == "temp"],
+      [{"id": "temp", "name": "CPU temperature", "show": "showTemp", "graph": "graphPanelTemp",
+        "popup": "popupTempAvg", "popupGraph": "graphPopupTemp"}])
+equal("statName reads the registry", run(M, "[statName('fan'), statName('net')]"), ["Fan speed", "Network speed"])
+equal("statName of an unknown id is the id", run(M, "statName('zzz')"), "zzz")
+equal("hardware keys: battery and fan only", run(M, "METRICS.map(function(m){return hardwareKey(m.id)})"),
+      ["", "", "", "", "", "batteryCount", "fanCount"])
+equal("hardwareKey of an unknown id is empty", run(M, "hardwareKey('zzz')"), "")
+declared = set()
+for page in ("configGeneral", "configMetrics", "configGraphs"):
+    declared |= set(re.findall(r"property\s+\w+\s+cfg_(\w+)", open(os.path.join(UI, page + ".qml"), encoding="utf-8").read()))
+for r in rows:
+    for k in (r["show"], r["graph"], r["popup"], r["popupGraph"]):
+        check("a settings page declares cfg_%s and cfg_%sDefault" % (k, k), k in declared and (k + "Default") in declared)
+for m in run(M, "METRICS.map(function(m){return {id:m.id,o:m.keys.options||{},h:m.keys.hidden||{}}})"):
+    for k in m["o"].values():
+        check("a settings page declares the option cfg_%s" % k, k in declared and (k + "Default") in declared)
+    for k in m["h"].values():
+        check("the hidden key %s has no cfg_ property" % k, k not in declared and (k + "Default") not in declared)
+check("configMetrics builds its rows from the registry", "M.settingsRows()" in CFG_QML and "M.hardwareKey(id)" in CFG_QML)
+check("configMetrics has no hand-written stat list", 'id: "cpu"' not in CFG_QML)
+check("LengthNotice names stats through the registry", "M.statName(" in NOTICE_QML and "function statName" not in NOTICE_QML)
+
+# ---- review fixes P3-P5: no per-stat hardware ids or sensors in generic code ----
+equal("popupAvailable follows popup.available", run(M, "[popupAvailable(byId('fan'),{available:{hasFan:true}}),popupAvailable(byId('fan'),{available:{hasFan:false}}),popupAvailable(byId('fan'),{}),popupAvailable(byId('cpu'),{})]"), [True, False, False, True])
+check("statPopupOn reads the registry's availability", "M.popupAvailable(m, popupFlags(id))" in MAIN_QML and 'id === "bat" ? hasBattery' not in MAIN_QML)
+check("anyPopupShown reuses popupIds", "return popupIds().length > 0" in MAIN_QML)
+check("RepeatBlock counts items with the registry's countSensor", "root.sensorValue(statId, spec.countSensor)" in MAIN_QML and "root.coreCount" not in MAIN_QML)
+check("configMetrics has one availability rule", "page.hasFan" not in CFG_QML and "hasBat" not in CFG_QML)
 
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))

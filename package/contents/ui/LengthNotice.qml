@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.plasmoid
+import "Metrics.js" as M
 
 // A warning shown in the settings when the maximum length is currently changing what the
 // panel strip shows. The widget writes the state (lengthLevel, lengthTextShort, lengthDropped, lengthInlineOff);
@@ -16,21 +17,9 @@ Kirigami.InlineMessage {
     readonly property bool active: cfg.maxLength > 0
                                    && (cfg.lengthInlineOff || shortened || tight || droppedIds.length > 0)
 
-    function statName(id) {
-        switch (id) {
-        case "cpu":  return i18n("CPU usage")
-        case "ram":  return i18n("Memory")
-        case "temp": return i18n("CPU temperature")
-        case "freq": return i18n("CPU frequency")
-        case "net":  return i18n("Network speed")
-        case "bat":  return i18n("Battery")
-        case "fan":  return i18n("Fan speed")
-        }
-        return id
-    }
     function droppedNames() {
         var names = []
-        for (var i = 0; i < droppedIds.length; ++i) names.push(statName(droppedIds[i]))
+        for (var i = 0; i < droppedIds.length; ++i) names.push(M.statName(droppedIds[i]))
         return names.join(", ")
     }
 
