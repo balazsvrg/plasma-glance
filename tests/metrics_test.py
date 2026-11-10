@@ -355,6 +355,73 @@ equal("registry net scale", run(M, "byId('net').scale"), {"from": 0, "mode": "de
 equal("registry fan source numbers", run(M, "[byId('fan').source.firstScanMs,byId('fan').source.retryMs,byId('fan').source.maxAttempts]"), [800, 3000, 10])
 equal("registry battery interval", run(M, "byId('bat').source.intervalMs"), 5000)
 
+# ---------------------------------------------------------------- 5. golden data
+print("5. registry against the golden panel text (tests/golden/panel_text.json)")
+GOLDEN = json.load(open(os.path.join(ROOT, "tests", "golden", "panel_text.json"), encoding="utf-8"))
+MODES = [(f, b) for f in (False, True) for b in (False, True)]
+
+
+def by_mode(groups):
+    """The golden groups [[modes], value] as {(useF, netBits): value}."""
+    out = {}
+    for modes, value in groups:
+        for m in modes:
+            out[(m[0] == "1", m[1] == "1")] = value
+    return out
+
+
+def ctx_of(f, b):
+    return "{useF:%s,netBits:%s,warnTempC:80}" % (str(f).lower(), str(b).lower())
+
+
+VALUES = GOLDEN["values"]
+compared = 0
+for fmtname, groups in sorted(GOLDEN["formats"].items()):
+    for (f, b), want in by_mode(groups).items():
+        got = run(M, "[%s].map(function(v){return FORMATS.%s(v,%s)})" % (",".join(VALUES), fmtname, ctx_of(f, b)))
+        compared += len(want)
+        equal("format %s useF=%s netBits=%s" % (fmtname, f, b), got, want)
+
+KEYS = {"cpu": ("value",), "ram": ("value",), "temp": ("value",), "freq": ("value",), "fan": ("value",),
+        "bat": ("percent", "state"), "net": ("down", "up")}
+for stat, data in sorted(GOLDEN["text"].items()):
+    ins = data["inputs"]
+    objs = "[%s]" % ",".join("{%s}" % ",".join("%s:%s" % (k, v) for k, v in zip(KEYS[stat], inp)) for inp in ins)
+    for name, groups in sorted(data.items()):
+        if name == "inputs":
+            continue
+        orient, kind = name.split()
+        for (f, b), want in by_mode(groups).items():
+            got = run(M, "%s.map(function(v){return panelText(byId(%s),%s,%s,v,%s)})" % (
+                objs, json.dumps(stat), str(kind == "compact").lower(), str(orient == "vertical").lower(), ctx_of(f, b)))
+            compared += len(want)
+            equal("text %s %s useF=%s netBits=%s" % (stat, name, f, b), got, want)
+
+for stat, kinds in sorted(GOLDEN["reserve"].items()):
+    for kind, units in kinds.items():
+        for f in (False, True):
+            for b in (False, True):
+                got = run(M, "reserveText(byId(%s),%s,%s)" % (json.dumps(stat), str(kind == "compact").lower(), ctx_of(f, b)))
+                compared += 1
+                equal("reserve %s %s useF=%s netBits=%s" % (stat, kind, f, b), got, units["F" if f else "C"])
+
+for name, groups in sorted(GOLDEN["verticalSample"].items()):
+    stat, kind = name.split()
+    for (f, b), want in by_mode(groups).items():
+        got = run(M, "verticalLines(byId(%s),%s,sampleVals(byId(%s),true,%s),%s)" % (
+            json.dumps(stat), str(kind == "compact").lower(), json.dumps(stat), ctx_of(f, b), ctx_of(f, b)))
+        compared += 1
+        equal("vertical sample %s useF=%s netBits=%s" % (name, f, b), got, want)
+
+# The popup's battery row ("62% ↑  (45.3 Wh)").
+bad = 0
+for p, st, en, want in GOLDEN["popupBattery"]:
+    got = run(M, "render(byId('bat').popup.rows[0].value,{percent:%s,state:%d,energy:%s},{})" % (p, st, en))
+    compared += 1
+    bad += got != want
+check("popup battery row", bad == 0, "%d mismatches" % bad)
+check("golden data was compared (%d values)" % compared, compared > 5000)
+
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))
 if failures:
