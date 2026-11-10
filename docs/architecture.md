@@ -86,7 +86,7 @@ frequency, network and fan, and Plasma's `powermanagement` data engine for the b
                   updateRateLimit: refreshMs }                         interval: 5000 }
         | .value                                        | data["Battery"], data["Battery0".."]
         |                                               v
-        |   fan: FanDiscovery -> fanIds           batterySummary -> batPercent, batState, batLow
+        |   fan: FanDiscovery -> fanIds           batterySummary -> batPercent, batState
         |        -> Repeater of Sensors -> fanItems     |
         |        -> fanRpmMax() -> fanRpm, fanLevel     |
         v                                               v
@@ -98,10 +98,11 @@ frequency, network and fan, and Plasma's `powermanagement` data engine for the b
         |    statText(id, compact, vertical) --> MetricCell Label (panel)
         |                                    \-> tooltipText() (tooltip)
         |
-        +--> History { sensor, wanted } --Loader--> HistoryProxySource
-                  |  cpuHist, ramHist, ... (null while inactive)
+        +--> History { statId, series, sensor, wanted } --Loader--> HistoryProxySource
+                  |  one per registry series (historyItems; historySource is null while inactive)
                   v
              statHistory(id) / statHistory2(id) / statYFrom(id) / statYTo(id) / statLineColor(id)
+             (statAlert(id) -> M.alertOf, statYFrom/To -> M.scaleFrom/scaleEnd, peaks -> M.stepPeak)
                   |
                   +--> Spark in MetricCell (behind text or inline)
                   +--> PopupGraph { statId } in a popup block
@@ -131,11 +132,12 @@ the row order in the settings table.
 - `statOrder` is `normalizeOrder(Plasmoid.configuration.statOrder)`. `normalizeOrder` splits the
   comma-separated string, keeps only ids found in `defaultOrder`, removes repeats, then appends any id that
   is missing. So a stat added in a later version appears at the end for existing users without migration.
-- Per-stat predicates and helpers are `switch (id)` functions keyed by the stat id: `statShown`,
-  `statGraph` (panel graph flag), `statPopupGraph` (popup graph flag), `popupShown`, `statHistory`,
-  `statHistory2`, `statYFrom`, `statYTo`, `statAlert`, `statTextColor`, `statLineColor`, `statVals` (the live
-  values the registry's templates read) and `popupBlock`. Panel text, captions, samples and width reserves are
-  not among them any more: they are looked up in the registry by id (section 4).
+- Per-stat predicates are `switch (id)` functions keyed by the stat id: `statShown`, `popupShown`, `statVals`
+  (the live values the registry's templates read), `scaleVals` (what the following scales watch) and
+  `popupBlock`. Panel text, captions, samples and width reserves (section 4) and alerts, scales, histories and
+  the graph flags (section 8) are not among them any more: they are looked up in the registry by id
+  (`statAlert`, `statYFrom`, `statYTo`, `statHistory`, `statHistory2`, `statGraph`, `statPopupGraph`,
+  `statPopupOn`, `statTextColor` and `statLineColor` are generic).
 - `shownIds()` is `statOrder` filtered by `statShown`. For `bat` and `fan`, "shown" also needs the hardware
   (`batShown = showBat && hasBattery`, `fanShown = showFan && hasFan`).
 
@@ -408,7 +410,7 @@ on Apply, not while typing in the field.
 
 ### History
 
-`History` is a `Loader` component with properties `sensor`, `wanted` and `ready`:
+`History` is a `Loader` component with properties `statId`, `series`, `sensor`, `wanted` and `ready`:
 
 - `ready` is latched true the first time `sensor.value` is numeric (`onNumericChanged`, or at
   `Component.onCompleted`), so a history never starts with fake zeros and a missing sensor never blocks
@@ -420,14 +422,22 @@ on Apply, not while typing in the field.
 - `historyLen` is `round(historySeconds * 1000 / refreshMs)`, at least 2; `historySeconds` is the setting
   clamped to 30..300.
 
-There is one `History` per data series: `cpuHistory`, `ramHistory`, `tempHistory`, `freqHistory`,
-`netDownHistory`, `netUpHistory` (its `wanted` follows `netDownHistory.wanted`), `fanHistory`, `batHistory`.
-So net has two sources, down and up. `wanted` is "the stat is shown and its panel graph is on, or the stat is
-in the popup and its popup graph is on" (for example `(gpCpu && showCpu) || (gdCpu && popupCpu)`; for
-battery and fan it uses the hardware-checked `batShown`/`popupBatShown`/`fanShown`/`popupFanShown`).
-`root.cpuHist`, `ramHist`, ... are the loaders' `historySource`, and `statHistory(id)` / `statHistory2(id)`
-map a stat id to them. Battery and fan feed `History` through small `QtObject`s (`batSensor`, `fanSensor`)
-that expose a `value`, so they look like sensors.
+There is one `History` per series of each registry entry (`series`: `["value"]`, net has `["down", "up"]`),
+created by one `Repeater` (`historyRepeater`) over `root.historyKinds`, which is built from `M.METRICS`. So
+net has two sources, down and up. `historySensors` maps `"<id>.<series>"` to the object whose `value` the
+series follows (the sensor items; battery and fan feed `History` through small `QtObject`s, `batSensor` and
+`fanSensor`, that expose a `value`, so they look like sensors). All series of a stat share
+`wanted: root.historyWanted(id)`: "the stat is shown and its panel graph is on, or the stat's popup flag is
+on and its popup graph is on", that is `(statGraph(id) && statShown(id)) || (statPopupGraph(id) && statPopupOn(id))`
+(battery and fan use the hardware-checked `batShown` / `fanShown` and `hasBattery` / `hasFan`).
+
+`historyItems` is a property holding the created `History` items. The repeater reassigns it on every
+`onItemAdded`, so a lookup made before the items existed (a `Spark` binding evaluated during start-up) is made
+again once they do; this is the same pattern as `reserveItems`. `historyOf(id, series)` finds one by id and
+series name, `statHistory(id)` / `statHistory2(id)` return the `historySource` of a stat's first and second
+series (or `null`), and `sampleStoreOf(source)` returns the sample store of the item whose `historySource` is
+the given source. Lifetime is the same as before: an item is created when `wanted && ready` and destroyed when
+`wanted` goes false; a graph that is off costs nothing.
 
 ### Drawing
 
@@ -471,22 +481,41 @@ theme the graph is drawn on, so it is a live binding) and `lightFactor` (1.3). T
 `shade(lineColor)` and `shade(lineColor2)`, where `shade` returns `Qt.darker(c, lightFactor)` on a light theme
 and `c` unchanged otherwise. The fill uses the line colour, so it follows. Dark themes are unaffected.
 
-### Scales (`statYFrom`, `statYTo`)
+### Scales and alerts (registry-driven)
 
-- temperature: `tempYMin` 20 to `tempYMax = max(100, warnTempC + 10)`
-- cpu, ram, battery: 0..100
-- frequency: 0..`freqPeak`, which starts at 1000 and `freqMax.onValueChanged` raises it to the highest
-  maximum-frequency value seen
-- fan: 0..`fanPeak`, starts at 3000, raised by `onFanRpmChanged`
-- network: 0..`netPeak`. `trackNetPeak()` runs from `netDown.onValueChanged` (once per refresh; upload updates
-  in the same tick) and returns at once unless a net graph is on (`gpNet || gdNet`). It sets
-  `netPeak = max(100000, down, up, netPeak * 0.99^(refreshMs/1000))`: it rises immediately to the highest rate
-  and decays about 1% per second of real time, whatever the refresh rate, never below 100 KB/s. With bar
-  graphs on, the value fed into the max is `down + up` instead of `max(down, up)` (a stacked bar is as tall
-  as the sum); the line-mode scale is unchanged.
+Scales and alerts are fields of the registry entry (`Metrics.js`, `scale` and `alert`); `main.qml` holds only
+the state and the triggers. `Metrics.js` is a `.pragma library` (pure functions, no property tracking), so
+`main.qml` reads every input inside the binding and passes plain values in.
 
-The line colour is `statLineColor(id)`: red (`negativeTextColor`) while the stat is in alert (`statAlert`:
-`temp` with `avgHot`, `bat` with `batLow`), otherwise the highlight colour.
+- `statYFrom(id)` is `M.scaleFrom(entry)`; `statYTo(id)` is `M.scaleEnd(entry, limitCtx, peak)`. A fixed scale
+  (`to`) is 0..100 for cpu, ram and battery; temperature is `20 .. max(100, warnTempC + 10)` (`to` is a function of
+  `limitCtx`, the object `{ warnTempC }` that `main.qml` rebuilds when the warning temperature changes, so bindings
+  re-evaluate). A scale that follows the data (`mode: "peak"` or `"decay"`) ends at the stat's current peak.
+- `statAlert(id)` is `M.alertOf(entry, statVals(id), limitCtx)`; a stat without an `alert` function never reads
+  its values. Temperature alerts at `value >= warnTempC`, battery below 15 % and not charging.
+  `statTextColor` and `statLineColor` derive from it: red (`negativeTextColor`) in alert, otherwise the text or
+  highlight colour. The popup's "max core" temperature uses the registry's second row alert (`tempHot`).
+
+Peaks (frequency, network, fan: the stats whose scale `followsData`):
+
+- The peak is state and lives in `root.peaks`, a map from stat id to number (a missing id means the scale's
+  `floor`: 1000 for frequency, 100000 for network, 3000 for fan). It is replaced, never edited in place, so
+  bindings that read `peakOf(id)` are notified; it is written only when the value changed.
+- `stepPeak(id)` is the only writer. It calls `M.stepPeak(entry, prev, scaleVals(id), ctx, refreshMs)`, a pure
+  function: `ctx` is `{ barChart, graphOn }` and the last argument is the time since the previous step in
+  milliseconds. The three triggers are where the old per-stat code ran: `freqMax.onValueChanged` (frequency),
+  `netDown.onValueChanged` (network, once per refresh; upload updates in the same tick, so it can be one update
+  behind) and `onFanRpmChanged` (fan). `scaleVals(id)` hands the pure function the values the scale watches
+  (registry `scale.observe.keys`: `max` for frequency, `down` and `up` for network, `value` for fan).
+- The step is `max(floor, observed, previous)`; a `"decay"` scale first multiplies the previous peak by
+  `decay ^ (dtMs / 1000)`. The network scale (`decay: 0.99`, `floor: 100000`) therefore rises at once to the
+  highest rate and falls about 1 % per second of elapsed time. The elapsed time is the refresh interval
+  because the step runs once per sensor update; there is no clock read anywhere, so a step sequence is fully
+  deterministic. `scale.observe` for network is `{ keys: ["down", "up"], combine: "max", barCombine: "sum" }`:
+  line graphs watch the higher of the two, bar graphs (stacked) the sum (`ctx.barChart`). `needsGraph: true`
+  (network only) makes the step a no-op unless a net graph is enabled (`statGraph || statPopupGraph`).
+
+---
 
 ---
 
@@ -504,7 +533,7 @@ Battery numbers are verified against `/sys/class/power_supply/BAT*` and `upower 
   (`batPercent`), `"State"` (`batState`: 1 charging, -1 discharging, 0 otherwise), `"Remaining msec"`
   (`batTimeText()` formats it with `hoursText`). Per battery: `"Energy"`, `"Pretty Name"`, `"Percent"`,
   `"Capacity"`, `"State"`. `batEnergyTotal()` sums `"Energy"` over the sources.
-- `batLow` is `batPercent < 15 && batState <= 0`; with `avgHot` it is one of the two `statAlert` conditions.
+- The low-battery alert (`batPercent < 15 && batState <= 0`) is the registry's `alert` of the battery entry.
 - `batShown = showBat && hasBattery` and `popupBatShown = popupBat && hasBattery`, so everything
   downstream (strip, popup, tooltip, history) disappears on a machine without a battery.
 - `syncBatteryCount(data)` writes `batteryCount`. It runs from a `Connections { target: powerSource }`
@@ -585,7 +614,7 @@ A sensor that nothing shows is switched off with `enabled:`. Three tiers, all vi
   instantiates `fullRepresentation`, which was not checked here.
 
 Graph history is a separate gate (`History.wanted`, section 8): it needs the graph flag and the stat to be
-shown. Battery data is always connected for the `"Battery"` summary (section 9) and the individual batteries
+shown (or its popup row on). Battery data is always connected for the `"Battery"` summary (section 9) and the individual batteries
 only while the popup shows them.
 
 ---
@@ -688,20 +717,22 @@ settings. Everything else (strip layout, tooltip, `syncLengthInfo`, `configs()`,
    other setting the stat needs. Add the id to the `statOrder` default string (not required for upgrades,
    because `normalizeOrder` and `loadOrder` append missing ids, but the Defaults button uses this string).
    If it depends on hardware, add a `xCount` Int entry that the widget writes.
-2. `main.qml`, settings properties: `readonly property bool showX`, `popupX`, and the graph flags `gpX` and
-   `gdX` (next to `gpCpu`, `gdCpu`, ...).
+2. `main.qml`, settings properties: `readonly property bool showX` and `popupX` (the sensors' `enabled:` and
+   `statShown` use them). The graph flags need no property: `statGraph` / `statPopupGraph` / `statPopupOn` read
+   the registry's `keys.gp`, `keys.gd` and `keys.popup` from the configuration.
 3. `main.qml`, sensors: add `Sensors.Sensor { id: ...; sensorId: "..."; updateRateLimit: root.refreshMs;
    enabled: ... }`. Use `root.showX || root.popupX` for what the panel and popup need, and
    `root.popupX && root.expanded` for popup-only details. If the sensor is hardware-dependent, add a
    `hasX` / `xShown` / `popupXShown` set like `hasBattery` / `batShown` / `popupBatShown`, and write
    `xCount` with `setCfg` from the code that finds it (compare `syncBatteryCount` and the `FanDiscovery`
    loader, and be careful not to decide "none" from an empty first look).
-4. `main.qml`, history (if the stat can have a graph): add `History { id: xHistory; sensor: ...; wanted:
-   (root.gpX && root.showX) || (root.gdX && root.popupX) }`, a `readonly property var xHist:
-   xHistory.historySource`, and a scale peak property if the scale is not 0..100. If the stat is not a
-   sensor (like battery and fan), wrap its value in a `QtObject { readonly property var value: ... }`.
-5. `main.qml`, ordering and flags: add the id to `defaultOrder`, and a case to `statShown` (use the
-   hardware-checked property), `statGraph` (`gpX`) and `statPopupGraph` (`gdX`).
+4. `main.qml`, history (if the stat can have a graph): the registry's `series` creates the `History` items by
+   itself. Add one entry per series to `historySensors` (`"x.value": xSensor`). If the stat is not a sensor
+   (like battery and fan), wrap its value in a `QtObject { readonly property var value: ... }`. If the scale
+   follows the data, add a case to `scaleVals` (the values `scale.observe.keys` names) and call `stepPeak("x")`
+   from the sensor's `onValueChanged`.
+5. `main.qml`, ordering and flags: add the id to `defaultOrder`, a case to `statShown` (use the
+   hardware-checked property), and, for a hardware-dependent stat, to `statPopupOn`.
 6. `Metrics.js` and `main.qml`, panel text and widths: add the stat's entry to `METRICS` (and its id to
    `DEFAULT_ORDER`): `panel.full`, `panel.compact`, `panel.vertical` (caption first), `panel.verticalCompact`
    when the vertical value has a shorter form (that alone makes `statCompact` consider it), `panel.sample` (the
@@ -712,8 +743,10 @@ settings. Everything else (strip layout, tooltip, `syncLengthInfo`, `configs()`,
    `TextMetrics`, no `reservedWidth` case, no `valueText`/`statText`/`verticalCaption`/`statValue` case and no
    list in `statCompact` to edit any more. `tests/golden/` is frozen at v0.9.1, so a new stat is covered by
    literal checks added to `tests/metrics_test.py`, not by regenerating it.
-7. `main.qml`, helpers: `statAlert` (if it can alert), `statHistory` (and `statHistory2` for a second
-   line), `statYTo` (and `statYFrom`) if the scale is not 0..100.
+7. `Metrics.js`, graph and alert: the entry's `scale` (fixed `{ from, to }`, `to` as a function of `limitCtx`,
+   or a following scale with `mode`, `floor`, `observe`), `series` (the vals keys drawn: `[value]` or
+   `[down, up]`) and, if the stat can alert, `alert(vals, ctx)`. `statAlert`, `statHistory`, `statHistory2`,
+   `statYFrom` and `statYTo` are generic and need no case.
 8. `main.qml`, `MetricCell`: nothing for a text-only stat. For an icon, follow `cell.fan` (the extra grid
    column and the icon item).
 9. `main.qml`, popup: a case in `popupShown`, a case in `popupBlock`, and a `Component { id: xBlock; ...}`

@@ -4,10 +4,11 @@
 // templates into panel / popup text.
 //
 // STATUS: main.qml takes its panel text (statText, verticalLines), its horizontal width reserves, its alerts,
-// its graph scales and its graph histories (one per series) from this file; the rest of a descriptor (keys
-// other than the graph flags, sensors, popup rows) is not used by the widget yet and is checked against it by
-// tests/metrics_test.py. This is a .pragma library: the functions are pure
-// and see no QML properties, so the caller passes every setting in through ctx and every value through vals.
+// its graph scales and its graph histories (one per series) from this file, and reads the graph and popup flags
+// through keys.gp / keys.gd / keys.popup; the rest of a descriptor (the other keys, sensors, popup rows) is not
+// used by the widget yet and is checked against it by tests/metrics_test.py. This is a .pragma library: the
+// functions are pure and see no QML properties, so the caller passes every setting in through ctx and every
+// value through vals.
 //
 // Descriptor fields (a field is present only when the stat needs it):
 //   id        short id used in statOrder ("cpu", "ram", ...)
