@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 ID="org.local.cpumemtemp"
-SRC="cpu-mem-temp-widget"
+SRC="glance"
 INSTALLED="${XDG_DATA_HOME:-$HOME/.local/share}/plasma/plasmoids/$ID"
 
 command -v kpackagetool6 >/dev/null || { echo "kpackagetool6 not found (is Plasma 6 installed?)" >&2; exit 1; }
@@ -19,4 +19,4 @@ fi
 echo
 echo "Installed. To load the new version, reload Plasma:"
 echo "  kquitapp6 plasmashell; kstart plasmashell"
-echo "Then right-click the panel > Add Widgets > 'CPU / RAM / Temp Monitor'."
+echo "Then right-click the panel > Add Widgets > 'Glance'."

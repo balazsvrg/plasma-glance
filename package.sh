@@ -6,7 +6,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-SRC="cpu-mem-temp-widget"
+SRC="glance"
 ID=$(python3 -c "import json; print(json.load(open('$SRC/metadata.json'))['KPlugin']['Id'])")
 VERSION=$(python3 -c "import json; print(json.load(open('$SRC/metadata.json'))['KPlugin']['Version'])")
 OUT="dist/$ID-$VERSION.plasmoid"

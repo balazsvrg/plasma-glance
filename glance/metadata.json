@@ -1,8 +1,8 @@
 {
     "KPlugin": {
         "Id": "org.local.cpumemtemp",
-        "Name": "CPU / RAM / Temp Monitor",
-        "Description": "Compact panel widget showing CPU usage, memory usage and CPU temperature",
+        "Name": "Glance",
+        "Description": "Your machine at a glance: CPU, memory, temperature, frequency, network, battery and fan in one configurable panel strip, with graphs and a details popup",
         "Icon": "utilities-system-monitor",
         "Authors": [{ "Name": "Local" }],
         "Category": "System Information",

@@ -1,21 +1,25 @@
-# CPU / RAM / Temp Monitor
+# Glance
 
-A compact KDE Plasma 6 panel widget that shows CPU usage, memory usage and CPU
-temperature in one strip, with a details popup.
+Your machine at a glance: a compact KDE Plasma 6 panel widget that puts CPU usage, memory,
+temperature and more in one strip, with a details popup.
 
 ```
-CPU 4%  |  RAM 30%  |  35°C
+CPU 4%  |  RAM 30%  |  35°C  |  ↓12 KB/s ↑3 KB/s  |  BAT 62% ↑
 ```
 
-- Horizontal panels: one line, thin dividers spanning the panel height.
-- Vertical panels: three captioned blocks (`CPU` over `4%`), text shrinks to fit.
-- Click for a popup with used / total memory, average and max temperature, and a per-core
-  temperature list (one entry per KDE core sensor; hyperthreads of one physical core read alike).
-- Optional line graphs, switchable per stat, in the panel (behind text or inline)
-  and in the popup. Off by default.
-- Each temperature turns red when it reaches the configurable threshold.
-- Pure QML. No native code, no background processes: values come from KDE's own
-  sensor service (`org.kde.ksysguard.sensors`).
+- **Stats:** CPU usage, memory and CPU temperature by default. CPU frequency, network speed, battery
+  and fan speed (with a spinning fan icon) can be switched on. Battery and fan only appear on
+  machines that have them.
+- **Yours to arrange:** choose what shows in the panel and in the popup, and drag the stats into
+  the order you want. Optional line graphs can be switched on per stat.
+- **Fits your panel:** set a maximum length (in the settings, or by dragging a handle on the strip)
+  and the strip shortens its text, then hides the last stats, instead of growing too long.
+- **Horizontal or vertical panels:** one line with thin dividers, or stacked captioned blocks.
+- **Click for a popup** with used / total memory, average and hottest-core temperature, a per-core
+  list, and the details of the other stats.
+- A temperature turns red when it reaches a threshold you set.
+- Pure QML. No native code, no background processes: values come from KDE's own sensor service
+  and power-management engine.
 
 ## Requirements
 
@@ -81,7 +85,7 @@ kquitapp6 plasmashell; kstart plasmashell
 This blanks the desktop and panels for a second or two; logging out and back in does the same job.
 Your open applications are not affected.
 
-Then right-click the panel, choose **Add Widgets**, search for **CPU / RAM / Temp Monitor** and drag it
+Then right-click the panel, choose **Add Widgets**, search for **Glance** and drag it
 onto the panel. It is designed for a panel; placing it elsewhere has not been tested.
 
 ### Check it worked
@@ -223,7 +227,7 @@ about 12 seconds without interaction, or untick the menu entry.
 ## Develop
 
 ```
-kpackagetool6 -t Plasma/Applet -u cpu-mem-temp-widget   # reinstall after edits
+kpackagetool6 -t Plasma/Applet -u glance   # reinstall after edits
 plasmawindowed org.local.cpumemtemp                      # test in a plain window
 ```
 
@@ -246,7 +250,7 @@ Graphs use KDE Quick Charts (`org.kde.quickcharts`: `LineChart`, `HistoryProxySo
 ## Layout
 
 ```
-cpu-mem-temp-widget/
+glance/
   metadata.json                 widget id, name, API version
   contents/config/main.xml      settings schema and defaults
   contents/config/config.qml    registers the settings page
