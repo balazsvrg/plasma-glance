@@ -147,7 +147,7 @@ These six keys are declared in `main.xml` but have no control on any settings pa
 
 | Key | Type | Default | Range | Written by | Meaning |
 |---|---|---|---|---|---|
-| `batteryCount` | Int | `0` | none declared | `syncBatteryCount()` in `main.qml`, when the power-management engine reports a battery or the list of battery sources changes | Number of batteries found (0 when there is none). Written with `setCfg`, so only when it changed. |
+| `batteryCount` | Int | `0` | none declared | `syncBatteryCount()` in `main.qml`, on every `newData` event of the power-management engine's `"Battery"` source | Number of batteries found (0 when there is none). Written with `setCfg`, so only when it changed. |
 | `fanCount` | Int | `0` | none declared | The `FanDiscovery` loader in `main.qml`, only when discovery has finished with a final result | Number of fans found. Discovery retries for about 30 seconds and needs two identical non-empty scans, so an empty first scan never writes 0 and never overwrites a saved count. |
 | `lengthLevel` | Int | `0` | 0 to 3 | `syncLengthInfo()` in `main.qml`, from the current fit result | Compaction step the maximum length currently forces. 0 none; 1 inline graphs become behind-text graphs; 2 compact text (horizontal panels only; vertical panels skip it); 3 tight spacing. `LengthNotice` shows the "space between stats is tightened" line when this is 3 or more. |
 | `lengthTextShort` | Bool | `false` | | `syncLengthInfo()` | `true` when the maximum length currently shortens the panel text (level 2 or more on a horizontal panel; never true on a vertical panel). |

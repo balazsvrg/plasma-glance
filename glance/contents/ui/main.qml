@@ -100,11 +100,16 @@ PlasmoidItem {
     function batteryData(key) { var d = powerSource.data[key]; return d ? d : ({}) }
 
     // The settings pages read the battery count from the config (they cannot see the engine).
-    function syncBatteryCount() {
-        setCfg("batteryCount", hasBattery ? batterySources.length : 0)
+    // Written from the "Battery" source's own newData event and computed from the event's data
+    // (derived properties can be stale inside a change handler). The first event is the engine's
+    // real answer, so a saved count is corrected even if hasBattery never changes.
+    function syncBatteryCount(data) {
+        setCfg("batteryCount", data["Has Battery"] === true && data["Sources"] ? data["Sources"].length : 0)
     }
-    onHasBatteryChanged: syncBatteryCount()
-    onBatterySourcesChanged: syncBatteryCount()
+    Connections {
+        target: powerSource
+        function onNewData(sourceName, data) { if (sourceName === "Battery") root.syncBatteryCount(data) }
+    }
 
     readonly property var batPercent: isNum(batterySummary["Percent"]) ? Number(batterySummary["Percent"]) : undefined
     readonly property int batState: batterySummary["State"] === "Charging" ? 1
