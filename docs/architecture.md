@@ -42,6 +42,13 @@ install.sh / uninstall.sh        kpackagetool6 wrappers (install or upgrade for 
 package.sh                       zips metadata.json + contents/ into dist/<id>-<version>.plasmoid
 ```
 
+`contents/ui/Metrics.js` is a registry that describes each stat as data: its labels, settings keys and
+defaults, sensors and when they are polled, panel text templates (full, compact, vertical), worst-case
+samples, graph scale, alert rule and popup rows, plus the pure formatting helpers that render those templates.
+The widget does not use it yet: `main.qml` and the settings pages still carry their own copies of all of this.
+`tests/metrics_test.py` checks that the registry reproduces today's strings, formats and key names exactly.
+It is intended to replace the per-stat switches and lists that section 14 enumerates.
+
 `metadata.json` keeps the plugin id `org.local.cpumemtemp` although the visible name is "Glance"; Plasma stores
 the applet's settings under the id, so renaming it would reset them.
 

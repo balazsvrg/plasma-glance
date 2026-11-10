@@ -194,6 +194,34 @@ The same reasoning applies to sensors: ones used only by an optional stat or by 
 `enabled:` tied to the show/popup flags, so nothing polls for data nobody sees. Gate new sensors the same
 way.
 
+## Tests
+
+The widget itself still has no automated tests (see below), but the metrics registry
+(`package/contents/ui/Metrics.js`) has a test that runs without Plasma:
+
+```
+python3 tests/metrics_test.py
+```
+
+It needs `python3` with PySide6; its `QJSEngine` is Qt's own JavaScript engine, the one QML uses. The script
+prints one line per failure, a summary, and exits non-zero if anything failed. It checks:
+
+- every panel text the registry renders (full, compact, vertical lines, vertical compact, both temperature
+  units, net in bytes and bits mode) equals the worst-case string `main.qml` uses today: the `m*`
+  `TextMetrics` lines are read from `main.qml` by the script, so editing one there fails the test until the
+  registry follows;
+- the registry's formatters give the same output as the formatting functions in `main.qml` (extracted from it
+  and run in a second engine) over a table of boundary values, plus literal edge cases (rate rollover at
+  999.5, 9.95, 0.8 GHz, rpm, rounding, `--` for non-numbers);
+- alert rules, graph scales, sensor gating and `render()` itself;
+- the structure: unique ids, names equal to the Metrics table and `LengthNotice` labels, sensor ids equal to
+  the ones in `main.qml`, and every key of `main.xml` either claimed by one descriptor (with the same
+  default) or listed in the script with the reason it stays outside.
+
+Checking widths with real font metrics needs the widget: a temporary copy of `package/` with an overlay that
+prints `fm.advanceWidth(...)` of the registry text next to the existing `m*` widths, run in `plasmawindowed`
+as described under "Testing without touching the real install". Do not commit such an overlay.
+
 ## No automated tests, no linter
 
 There is no automated test suite and no `qmllint` here. Consequences:
