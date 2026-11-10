@@ -4,7 +4,9 @@
         "Name": "Glance",
         "Description": "Your machine at a glance: CPU, memory, temperature, frequency, network, battery and fan in one configurable panel strip, with graphs and a details popup",
         "Icon": "utilities-system-monitor",
-        "Authors": [{ "Name": "Local" }],
+        "Authors": [{ "Name": "Balázs Varga", "Email": "45207594+balazsvrg@users.noreply.github.com" }],
+        "Website": "https://github.com/balazsvrg/plasma-glance",
+        "BugReportUrl": "https://github.com/balazsvrg/plasma-glance/issues",
         "Category": "System Information",
         "License": "GPL-2.0-or-later",
         "Version": "0.8.1"

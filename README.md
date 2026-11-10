@@ -52,7 +52,7 @@ so no root access is needed. Pick one of these ways.
 ### From the project folder
 
 ```
-git clone <the repository>      # or copy the folder to the machine
+git clone https://github.com/balazsvrg/plasma-glance.git
 cd plasma-glance
 ./install.sh
 ```
@@ -129,8 +129,8 @@ and reload Plasma. (A system-wide install needs `sudo ... -g -r` instead.)
 
 `./package.sh` builds `dist/org.local.cpumemtemp-<version>.plasmoid` (a zip with `metadata.json` and
 `contents/` at its top level, named after the id and version in `metadata.json`). Bump the version in
-`metadata.json` first. The `dist/` folder is not tracked by git. Before sharing the package, set a real
-author in `metadata.json` (it currently says "Local") and check the license field.
+`metadata.json` first. The `dist/` folder is not tracked by git. The author, website and bug-report
+URL in `metadata.json` point at the GitHub repository.
 
 ## Settings
 

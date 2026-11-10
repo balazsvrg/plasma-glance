@@ -259,8 +259,7 @@ same steps:
 8. **Tag** the release commit: `git tag -a v0.9 -m "v0.9: ..."`. Every release from `v0.2` on has an
    annotated tag (`v0.7` and `v0.8` were added afterwards, on their release commits).
 
-Before sharing a package with anyone else, set a real author in `metadata.json` (it says "Local") and
-check the license field. `dist/` is ignored by git; do not commit packages.
+The author, website and bug-report URL in `metadata.json` point at the GitHub repository. `dist/` is ignored by git; do not commit packages.
 
 ## Uninstalling
 
