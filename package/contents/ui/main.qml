@@ -9,6 +9,7 @@ import org.kde.quickcharts as Charts
 import org.kde.plasma.plasma5support as P5Support
 import org.kde.kitemmodels as KItemModels
 import "Metrics.js" as M
+import "Layout.js" as L
 
 PlasmoidItem {
     id: root
@@ -648,7 +649,7 @@ PlasmoidItem {
     //   0  full text, graphs as chosen
     //   1  inline graphs become behind-text graphs (those take no length)
     //   2  compact text (CPU 8% -> C 8%, 2.2 GHz -> 2.2G, ...), still readable (horizontal panels only:
-    //      on a vertical panel compact text saves no length, so levelList() skips this step and a stat is
+    //      on a vertical panel compact text saves no length, so layoutInput skips this step and a stat is
     //      shortened only when its own text is wider than the panel, see statCompact)
     //   3  tight spacing
     // If even that is too long, stats are dropped from the end of the user's order (Fan, Battery, Net,
@@ -868,31 +869,28 @@ PlasmoidItem {
     function rowSpacingFor(level) {
         return level >= 3 ? 0 : Kirigami.Units.smallSpacing
     }
+    // The measurements Layout.js works from. Layout.js is a pure library and cannot track properties, so this
+    // one binding must read every dependency itself: the shown stats, the orientation, every cell length
+    // (reservedWidth, verticalLines, hasIcon, graphs, units, line height) and the spacing. Add any new input here.
+    // Step 2 (compact text) saves no length on a vertical panel, so it is skipped there.
+    readonly property var layoutInput: {
+        var ids = shownIds()
+        var levels = vertical ? [0, 1, 3] : [0, 1, 2, 3]
+        var cells = {}
+        var gap = {}
+        for (var k = 0; k < levels.length; ++k) {
+            var lv = levels[k]
+            var row = []
+            for (var i = 0; i < ids.length; ++i) row.push(cellLength(ids[i], lv))
+            cells[lv] = row
+            // A 1 px divider and two gaps between stats.
+            gap[lv] = 1 + 2 * (vertical ? rowSpacingFor(lv) : spacingFor(lv))
+        }
+        return { levels: levels, cells: cells, gap: gap }
+    }
     // Length of the strip at a step, with the last `drop` stats removed.
-    function stripLength(level, drop) {
-        var ids = shownIds()
-        var n = ids.length - drop
-        if (n <= 0) return 0
-        var total = 0
-        for (var i = 0; i < n; ++i) total += cellLength(ids[i], level)
-        var gap = vertical ? rowSpacingFor(level) : spacingFor(level)
-        // A 1 px divider and two gaps between stats. Rounded up, plus a pixel for layout rounding (seen as
-        // 1 px in every test, however many stats), so the strip stays at or under the limit.
-        return Math.ceil(total + (n - 1) * (1 + 2 * gap)) + 1
-    }
-    // The steps the strip can take, longest first. Step 2 (compact text) saves no length on a vertical panel,
-    // so it is skipped there.
-    function levelList() { return vertical ? [0, 1, 3] : [0, 1, 2, 3] }
-    function computeFit() {
-        var ids = shownIds()
-        if (maxLength <= 0 || ids.length === 0) return { level: 0, drop: 0 }
-        var levels = levelList()
-        for (var k = 0; k < levels.length; ++k)
-            if (stripLength(levels[k], 0) <= maxLength) return { level: levels[k], drop: 0 }
-        for (var drop = 1; drop < ids.length; ++drop)
-            if (stripLength(3, drop) <= maxLength) return { level: 3, drop: drop }
-        return { level: 3, drop: ids.length - 1 }                         // only the first stat is left
-    }
+    function stripLength(level, drop) { return L.stripLength(layoutInput, level, drop) }
+    function computeFit() { return L.computeFit(layoutInput, maxLength) }
     // While the handle is dragged the layout follows dragStep() (with a halfway rule for shrinking);
     // otherwise it follows the saved limit.
     readonly property var fit: dragging ? dragFit() : computeFit()
@@ -922,55 +920,27 @@ PlasmoidItem {
     }
     // Every layout the strip can take, from longest to shortest: the four steps with all stats,
     // then dropping stats one by one at the tightest step.
-    function configs() {
-        var list = []
-        var n = shownIds().length
-        var levels = levelList()
-        for (var k = 0; k < levels.length; ++k) list.push({ level: levels[k], drop: 0, len: stripLength(levels[k], 0) })
-        for (var drop = 1; drop < n; ++drop) list.push({ level: 3, drop: drop, len: stripLength(3, drop) })
-        return list
-    }
+    function configs() { return L.configs(layoutInput) }
     // Computed once per change of settings (not once per mouse move while dragging).
     readonly property var layouts: configs()
     property int dragCfg: 0                  // index into layouts of the layout shown while dragging
-    function snapLimit() { return Math.max(20, Math.round(dragLength / 5) * 5) }     // pointer limit, snapped to 5 px
+    function snapLimit() { return L.snapLimit(dragLength) }     // pointer limit, snapped to 5 px
     function dragLayout() { return layouts[Math.min(dragCfg, layouts.length - 1)] }
     function dragFit() {
         var c = dragLayout()
         return { level: c.level, drop: c.drop }
     }
     function beginDrag(startLength) {
-        var cfgs = layouts
-        var cur = computeFit()
-        dragCfg = 0
-        for (var i = 0; i < cfgs.length; ++i)
-            if (cfgs[i].level === cur.level && cfgs[i].drop === cur.drop) { dragCfg = i; break }
+        dragCfg = L.dragStart(layouts, computeFit())
         dragLength = startLength
         dragMoved = false
         dragging = true
     }
-    // Growing is immediate: as soon as a longer layout fits, it is shown. Shrinking is deliberate:
-    // each step down only happens once the pointer has gone at least halfway from where the current
-    // layout fits to where the next shorter one fits, so a small nudge never makes the strip jump.
-    function dragStep() {
-        var cfgs = layouts
-        var limit = snapLimit()
-        var fitIdx = cfgs.length - 1
-        for (var i = 0; i < cfgs.length; ++i) if (cfgs[i].len <= limit) { fitIdx = i; break }
-        if (fitIdx < dragCfg) dragCfg = fitIdx                               // a longer layout fits: grow
-        while (dragCfg < cfgs.length - 1) {
-            var cur = cfgs[dragCfg].len
-            var j = dragCfg + 1
-            while (j < cfgs.length && cfgs[j].len >= cur) ++j                // next strictly shorter layout
-            if (j >= cfgs.length) break
-            if (limit > (cur + cfgs[j].len) / 2) break                         // not yet halfway
-            dragCfg = j
-        }
-    }
+    // Growing is immediate and shrinking needs the halfway point (see Layout.js dragStep).
+    function dragStep() { dragCfg = L.dragStep(layouts, dragCfg, snapLimit()) }
     // The limit that would be saved right now: what is on screen, never shorter than the shown layout.
     function dragMax() {
-        var v = Math.max(snapLimit(), dragLayout().len)
-        return v >= stripLength(0, 0) ? 0 : v
+        return L.dragMax(layouts, dragCfg, snapLimit(), stripLength(0, 0))
     }
     function finishDrag() {
         if (!dragging) return
