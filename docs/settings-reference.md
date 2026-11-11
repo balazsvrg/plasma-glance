@@ -24,6 +24,7 @@ The section is called `Main`, not `General`: QSettings treats `General` as its d
 How the file and the widget stay in step:
 
 - **At startup** the file is read once. A valid value is applied to the widget. A key the file lacks, or whose value is empty, is written from the widget's current value; this is also how the settings an older version saved in Plasma's own config are carried into the file the first time 1.0 runs. A value that is not valid (wrong type, outside the range, an order with no valid stat id) is left in the file exactly as written, and the widget keeps its current value (the widget issues a `console.warn`, but no log output of it was seen on the author's machine, so do not rely on it).
+- **A file that missed writes loses to the widget.** Every change also raises a counter, `settingsRev` in Plasma's config and `rev` in the file's `[Main]` section. If at startup the file's `rev` is lower than the widget's (a write was lost: read-only file, full disk, Plasma killed in the second between the change and the write), the widget's values win and are written back to the file. An equal or higher `rev` lets the file win: hand edits do not touch `rev`, and another instance writing the file raises it. Leave `rev` alone.
 - **While the widget runs** every change of a setting (settings dialog, edge drag, Defaults button) is written to the file about a second later (QSettings writes from a timer).
 - **Nothing watches the file.** Hand edits are picked up the next time the widget loads (log out and in, `kquitapp6 plasmashell; kstart plasmashell`, or removing and re-adding the widget). Changing a setting in the dialog while the widget runs rewrites that section from the widget's values, so an edit made to the same section in the meantime is lost. Comments are not kept on a rewrite; unknown sections and keys are.
 - Plasma's own applet config still holds a copy of every setting, because the settings pages and the rest of the widget read and write through it (see below). The file wins at startup.
@@ -42,6 +43,7 @@ Values: booleans are `true` / `false` (also `1` / `0`, any case); integers are p
 | `warnTemp` | `warnTemp` | int | `80` | 30 to 120 |
 | `refreshMs` | `refreshMs` | int | `1000` | 250 to 10000 |
 | `maxLength` | `maxLength` | int | `0` | 0 to 5000 |
+| `rev` | `settingsRev` | int | `0` | 0 to 2147483647 (change counter, do not edit) |
 
 **[Metrics]**
 
@@ -89,7 +91,7 @@ Values: booleans are `true` / `false` (also `1` / `0`, any case); integers are p
 | `fan_panelGraph` | `graphPanelFan` | bool | `false` | `true`, `false` |
 | `fan_popupGraph` | `graphPopupFan` | bool | `false` | `true`, `false` |
 
-A stat's options are the extra switches of its popup and panel: `temp_popupMax`, `temp_popupCores`, `net_bits`, `bat_separate`, `fan_animate`. The keys the widget writes about the hardware and the maximum-length state (`batteryCount`, `fanCount`, `length*`) are not in the file; they stay in Plasma's config (see "Hidden keys written by the widget").
+A stat's options are the extra switches of its popup and panel: `temp_popupMax`, `temp_popupCores`, `net_bits`, `bat_separate`, `fan_animate`. The keys the widget writes about the hardware and the maximum-length state (`batteryCount`, `fanCount`, `length*`) are not in the file (the change counter `settingsRev` is, as `rev`); they stay in Plasma's config (see "Hidden keys written by the widget").
 
 ### Plasma's applet config (still used)
 
@@ -225,12 +227,13 @@ The "All graphs" footer row sets all panel graph keys, or all popup graph keys, 
 
 ## Hidden keys written by the widget
 
-These six keys are declared in `main.xml` but have no control on any settings page. The widget writes them so the settings pages can describe hardware and layout state that only the running widget knows. They persist in the config file like any other key (a known trade-off), so after a restart they may briefly hold the last session's value until the widget recomputes them.
+These keys are declared in `main.xml` but have no control on any settings page. The widget writes them so the settings pages can describe hardware and layout state that only the running widget knows. They persist in the config file like any other key (a known trade-off), so after a restart they may briefly hold the last session's value until the widget recomputes them.
 
 | Key | Type | Default | Range | Written by | Meaning |
 |---|---|---|---|---|---|
 | `batteryCount` | Int | `0` | none declared | `syncBatteryCount()` in `main.qml`, on every `newData` event of the power-management engine's `"Battery"` source | Number of batteries found (0 when there is none). Written with `setCfg`, so only when it changed. |
 | `fanCount` | Int | `0` | none declared | The `FanDiscovery` loader in `main.qml`, only when discovery has finished with a final result | Number of fans found. Discovery retries for about 30 seconds and needs two identical non-empty scans, so an empty first scan never writes 0 and never overwrites a saved count. |
+| `settingsRev` | Int | `0` | 0 to 2147483647 | `SettingsFile.qml`, with every change of a setting | Counter of settings changes. It is also kept in the settings file as `rev` and compared with it at startup (see "Where the settings are stored"). Do not set it by hand. |
 | `lengthLevel` | Int | `0` | 0 to 3 | `syncLengthInfo()` in `main.qml`, from the current fit result | Compaction step the maximum length currently forces. 0 none; 1 inline graphs become behind-text graphs; 2 compact text (horizontal panels only; vertical panels skip it); 3 tight spacing. `LengthNotice` shows the "space between stats is tightened" line when this is 3 or more. |
 | `lengthTextShort` | Bool | `false` | | `syncLengthInfo()` | `true` when the maximum length currently shortens the panel text (level 2 or more on a horizontal panel; never true on a vertical panel). |
 | `lengthDropped` | String | empty | | `syncLengthInfo()` | Comma-separated stat ids hidden because they do not fit, in order (for example `net,bat,fan`). Empty when nothing is hidden. Dropped stats are taken from the end of `statOrder` and the first stat is never dropped. |

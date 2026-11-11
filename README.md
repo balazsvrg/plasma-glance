@@ -285,6 +285,12 @@ package.sh                      builds the .plasmoid into dist/
 
 ## Changelog
 
+**1.0.1**
+- The settings file now carries a change counter (`rev`). If a write to `~/.config/glancerc` was ever lost (read-only
+  file, full disk), the widget's own settings win at the next load instead of the stale file reverting your changes.
+- A stat without graph keys no longer breaks the file's key list (matters only when adding a stat).
+- Tests now cover the widget's settings-file code itself, not only its rules.
+
 **1.0.0**
 - **Settings file.** All settings are now kept in `~/.config/glancerc`, a plain INI file. The widget creates
   it on first run from your current settings, applies it when it loads, and writes every change you make
