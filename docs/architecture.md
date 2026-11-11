@@ -22,7 +22,8 @@ Contents
 12. Vertical panels
 13. The settings pages
 14. How to add a new stat
-15. Pitfalls
+15. The settings file
+16. Pitfalls
 
 ---
 
@@ -39,9 +40,12 @@ package/
   contents/ui/configGraphs.qml   settings page: panel graph style, chart style, history length
   contents/ui/LengthNotice.qml   warning banner shown on the General and Metrics pages
   contents/ui/Metrics.js         registry that describes each stat as data; panel text and width reserves come from it
+  contents/ui/Config.js          the settings file's rules: key schema from the registry, parse/validate, startup plan
+  contents/ui/SettingsFile.qml   reads ~/.config/glancerc at startup, writes every settings change to it
 install.sh / uninstall.sh        kpackagetool6 wrappers (install or upgrade for the current user)
 package.sh                       zips metadata.json + contents/ into dist/<id>-<version>.plasmoid
 tests/metrics_test.py            checks the registry and its use in main.qml (python3 + PySide6, no Plasma needed)
+tests/config_test.py             checks Config.js against main.xml and the registry, and a real round trip through QtCore.Settings
 tests/golden/                    the panel text of release v0.9.1 (panel_text.json) and the script that generated it
 ```
 
@@ -740,7 +744,9 @@ settings. Everything else (strip layout, tooltip, `syncLengthInfo`, `configs()`,
 1. `contents/config/main.xml`: add `showX`, `popupX`, `graphPanelX`, `graphPopupX` (with defaults), and any
    other setting the stat needs. Add the id to the `statOrder` default string (not required for upgrades,
    because `normalizeOrder` and `loadOrder` append missing ids, but the Defaults button uses this string).
-   If it depends on hardware, add a `xCount` Int entry that the widget writes.
+   If it depends on hardware, add a `xCount` Int entry that the widget writes. (The keys of the settings file
+   `~/.config/glancerc` are generated from the descriptor in step 3's registry entry; nothing to add there, but
+   `tests/config_test.py` fails if a `main.xml` key is neither in the file's schema nor listed as widget-written.)
 2. `main.qml`, settings properties: `readonly property bool showX` and `popupX` (`statShown` and the bespoke
    code use them; the plain sensors' gates read the registry's keys). The graph flags need no property: `statGraph` / `statPopupGraph` / `statPopupOn` read
    the registry's `keys.gp`, `keys.gd` and `keys.popup` from the configuration.
@@ -792,7 +798,49 @@ errors appear in the window, not on stderr. There is no `qmllint` here.
 
 ---
 
-## 15. Pitfalls
+## 15. The settings file
+
+`~/.config/glancerc` (user-facing description and key list: `settings-reference.md`). Two pieces:
+
+- `Config.js` (`.pragma library`, pure): `schema(METRICS)` lists every setting of the file as `{ section, name, cfg,
+  type, def, min, max }`: the stat keys (`<id>_show`, `<id>_popup`, `<id>_<option>`, `<id>_panelGraph`,
+  `<id>_popupGraph`) are generated from each descriptor's `keys` and `defaults`, the rest is the small `GENERAL`
+  table. `cfg` is the `main.xml` key. `parse` turns the raw text into a value or `undefined` (invalid),
+  `toIni` does the reverse, `plan(schema, raw, cfg, ids)` decides at startup what to apply, fill and report, and
+  `settingsSource` builds the QML source of one `QtCore.Settings` object per section.
+- `SettingsFile.qml` (one instance, in `main.qml`): `start()` creates the `Settings` objects, runs `plan`, assigns
+  the valid file values to `Plasmoid.configuration`, writes the absent keys into the file, reports the invalid ones with `console.warn` (no output of it was seen
+  in `plasmawindowed` or the journal, so it is not a diagnostic to rely on) and sets `ready`. An `Instantiator` over the schema keeps one `QtObject` per setting whose `value` binds
+  `Plasmoid.configuration[cfg]`; its change handler writes the new text to the file once `ready` is true.
+
+Design points, each found by trying it:
+
+- **Plasma's config stays the live store.** The settings pages bind `cfg_*` properties to `main.xml` entries and
+  `main.qml` reads `Plasmoid.configuration` everywhere, so the file is a persistent mirror that wins at startup,
+  not a replacement. The first run migrates an existing user's saved settings into the file because an absent key
+  is filled from the widget.
+- **Every key is a string property.** `Settings` cannot tell an absent key from a default value of another type,
+  and it turns an unparsable value into the default silently. With string properties `""` means absent and
+  `Config.js` does all the checking. Settings property names are the keys, so key names are identifiers
+  (`cpu_show`, not `cpu.show`).
+- **The section is `Main`**, not `General`: QSettings writes a group called `General` as `[%General]`.
+- **No polling and no watcher** (a decision: needless cost for a widget). The file is read once.
+- **Create the `Settings` objects from `Qt.callLater`**, not directly in `Component.onCompleted`: objects made while
+  the parent is still completing are not initialised yet.
+- **Writes are delayed** by about a second (QSettings syncs from a timer; `sync()` does not hurry it). A test that
+  reads the file must wait (`tests/config_test.py` uses 1.6 s steps).
+- **A write rewrites the whole section** from the object's values; a hand edit made to the same section while the
+  widget runs is overwritten. Unknown sections and keys survive; comments do not.
+- **Not covered by the file:** the hidden keys the widget writes (`length*`, `batteryCount`, `fanCount`), which
+  stay in Plasma's config.
+- A `Settings` instance means all widget instances share one file. Two Glance widgets would overwrite each other.
+
+Adding a stat needs nothing here: its keys come from its registry descriptor. A new non-stat setting goes into
+`GENERAL` in `Config.js` (with the same type and range as `main.xml`; `tests/config_test.py` compares them).
+
+---
+
+## 16. Pitfalls
 
 Each of these is visible in the code or its comments, except where marked.
 
@@ -826,6 +874,8 @@ Each of these is visible in the code or its comments, except where marked.
 - Use named enums (`PlasmaCore.Types.Vertical`, `Kirigami.MessageType.Warning`) rather than numbers. The
   exception in the code is the stored graph style (1 or 2), duplicated as `styleInline` in `main.qml` and as
   `currentIndex + 1` in `configGraphs.qml`.
+- Do not read the settings file with a typed `Settings` property or write it with an object created inside
+  `Component.onCompleted` (section 15), and do not put commas in a value: an unquoted comma reads as a list.
 - Write widget-owned settings with `setCfg` (writes only on change). Plain assignment is used only for the
   user-visible `maxLength` in `finishDrag` and `resetLength`.
 - `syncBatteryCount` must keep reading the `newData` event's `data`, not the derived `hasBattery` /
