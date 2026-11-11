@@ -363,6 +363,7 @@ UNCLAIMED = {
     "lengthTextShort": "global: widget-written state of the maximum-length system",
     "lengthDropped": "global: widget-written state of the maximum-length system (stat ids, not a per-stat key)",
     "lengthInlineOff": "global: widget-written state of the maximum-length system",
+    "settingsRev": "global: widget-written change counter for the settings file",
     "useFahrenheit": "global setting (General page); enters the registry only as ctx.useF",
     "warnTemp": "global setting (General page); enters the registry only as ctx.warnTempC",
     "refreshMs": "global: sensor update interval",
