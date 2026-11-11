@@ -142,6 +142,9 @@ check("the net sample is 999e6 (bits: /8)", sample("net", True)["down"] == 999e6
 # ---------------------------------------------------------------- 2. how main.qml uses the registry
 print("2. main.qml uses the registry")
 check("main.qml imports Metrics.js", re.search(r'^import "Metrics\.js" as M$', MAIN_QML, re.M) is not None)
+check("main.qml imports Layout.js", re.search(r'^import "Layout\\.js" as L$', MAIN_QML, re.M) is not None)
+for gone in ("function levelList", "Math.ceil(total", "(cur + cfgs[j].len) / 2"):
+    check("main.qml no longer has `%s` (the length arithmetic is in Layout.js)" % gone, gone not in MAIN_QML)
 # The per-stat panel code moved into the registry; none of it may come back (a second copy would drift).
 for gone in ("function valueText", "function netLines", "function verticalCaption", "function statValue", "function netText",
              "function rateParts", "function batValue", "function arrowFor", "function tempShort", "function freqShort",
