@@ -72,6 +72,12 @@
             <label>Written by the widget: inline graphs currently shown behind the text because of the maximum length</label>
             <default>false</default>
         </entry>
+        <entry name="settingsRev" type="Int">
+            <label>Written by the widget: counter of settings changes, compared with the rev in ~/.config/glancerc at startup</label>
+            <default>0</default>
+            <min>0</min>
+            <max>2147483647</max>
+        </entry>
         <entry name="statOrder" type="String">
             <label>Order of the stats in the panel strip and the popup, comma-separated</label>
             <default>cpu,ram,temp,freq,net,bat,fan</default>

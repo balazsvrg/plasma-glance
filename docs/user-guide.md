@@ -396,6 +396,9 @@ new values afterwards. A few things to know:
   that setting as it is in the widget, and the line stays in the file as you wrote it so you can correct it.
   An unknown stat in `order` is skipped and a missing one is appended.
 - **Spaces, not commas.** `order` is a list of stat ids separated by spaces. Do not put commas in a value.
+- **Leave `rev` alone.** It is a change counter in `[Main]`. The widget raises it with every change and, if the file
+  ever has a lower number than the widget (a write was lost, for example on a read-only or full disk), the widget's
+  settings win at the next load and the file is rewritten from them. Your hand edits do not touch it, so they win.
 - Comments in the file are lost the next time the widget writes it; sections and keys it does not know are kept.
 - All Glance widgets on the machine share the file.
 

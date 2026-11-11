@@ -9,7 +9,8 @@ import "Config.js" as C
 // At startup the file is read once: valid values are applied to the widget's settings (Plasmoid.configuration, which
 // the settings pages and the rest of the widget keep using), keys the file lacks are filled from the widget's
 // current values (this also migrates the settings an older version saved in Plasma's own config), invalid values are
-// left alone. After that every change of a setting (settings dialog, edge drag, Defaults button) is written to
+// left alone. A file that missed writes (its rev is behind the widget's) is overwritten from the widget instead.
+// After that every change of a setting (settings dialog, edge drag, Defaults button) is written to
 // the file. Nothing watches the file: an edit made while the widget runs is read after the next reload, and
 // a later change of a setting in the same section overwrites it.
 Item {
@@ -45,10 +46,14 @@ Item {
         var plan = C.plan(schema, raw(), cfg, stat_ids)
         for (var key in plan.apply) Plasmoid.configuration[key] = plan.apply[key]
         for (var name in plan.fill) put(byName[name], plan.fill[name])
+        if (plan.stale) console.warn("Glance: " + path + " was behind the widget's settings (a write was lost); rewriting it")
         if (plan.bad.length > 0)
             console.warn("Glance: ignoring invalid values in " + path + ": " + plan.bad.join(", "))
         ready = true
     }
+
+    // Every change raises the counter that start() compares with the file's (Config.js plan).
+    function bump() { Plasmoid.configuration.settingsRev = Plasmoid.configuration.settingsRev + 1 }
 
     // One watcher per setting: Plasmoid.configuration[key] is reactive, so a change from anywhere lands here.
     Instantiator {
@@ -56,7 +61,10 @@ Item {
         delegate: QtObject {
             required property var modelData
             readonly property var value: Plasmoid.configuration[modelData.cfg]
-            onValueChanged: if (file.ready) file.put(modelData, C.toIni(modelData, value))
+            onValueChanged: if (file.ready) {
+                file.put(modelData, C.toIni(modelData, value))
+                if (modelData.cfg !== "settingsRev") file.bump()
+            }
         }
     }
 

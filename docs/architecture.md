@@ -831,6 +831,13 @@ Design points, each found by trying it:
   reads the file must wait (`tests/config_test.py` uses 1.6 s steps).
 - **A write rewrites the whole section** from the object's values; a hand edit made to the same section while the
   widget runs is overwritten. Unknown sections and keys survive; comments do not.
+- **The change counter** (`settingsRev` in Plasma's config, `rev` in `[Main]`): `SettingsFile.bump()` raises it with every
+  change of any other setting. `plan` calls the file stale when its `rev` is below the widget's (a lost write: QML cannot
+  see a failed write, so this is the way to notice one); the widget's values then win and `fill` rewrites the whole file.
+  An equal or higher `rev` (hand edits do not touch it; another instance may have raised it) lets the file win, and a
+  higher one is applied to the widget. The watcher of `settingsRev` itself does not bump (no loop).
+- **Tests of the glue:** `tests/settingsfile_glue.py` runs the real `SettingsFile.qml` against a stub `Plasmoid` singleton
+  (one process per scenario: QSettings caches a file per process); `tests/config_test.py` runs six scenarios side by side.
 - **Not covered by the file:** the hidden keys the widget writes (`length*`, `batteryCount`, `fanCount`), which
   stay in Plasma's config.
 - A `Settings` instance means all widget instances share one file. Two Glance widgets would overwrite each other.

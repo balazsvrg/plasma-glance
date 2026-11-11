@@ -28,6 +28,8 @@ var GENERAL = [
     { section: "Main", name: "warnTemp",        cfg: "warnTemp",        type: "int",   def: 80,   min: 30,  max: 120 },
     { section: "Main", name: "refreshMs",       cfg: "refreshMs",       type: "int",   def: 1000, min: 250, max: 10000 },
     { section: "Main", name: "maxLength",       cfg: "maxLength",       type: "int",   def: 0,    min: 0,   max: 5000 },
+    // Counter of settings changes (see plan): the widget bumps it with every change, in Plasma's config and in the file.
+    { section: "Main",    name: "rev",             cfg: "settingsRev",     type: "int",   def: 0,    min: 0,   max: 2147483647 },
     { section: "Graphs",  name: "panelStyle",      cfg: "panelGraphStyle", type: "int",   def: 1,    min: 0,   max: 2 },
     { section: "Graphs",  name: "chartStyle",      cfg: "chartStyle",      type: "int",   def: 1,    min: 0,   max: 2 },
     { section: "Graphs",  name: "historySeconds",  cfg: "historySeconds",  type: "int",   def: 60,   min: 30,  max: 300 }
@@ -38,14 +40,15 @@ function schema(metrics) {
     var out = GENERAL.slice()
     for (var i = 0; i < metrics.length; ++i) {
         var m = metrics[i], k = m.keys, d = m.defaults || {}
-        out.push({ section: "Metrics", name: m.id + "_show",  cfg: k.show,  type: "bool", def: !!d.show })
-        out.push({ section: "Metrics", name: m.id + "_popup", cfg: k.popup, type: "bool", def: !!d.popup })
+        if (k.show)  out.push({ section: "Metrics", name: m.id + "_show",  cfg: k.show,  type: "bool", def: !!d.show })
+        if (k.popup) out.push({ section: "Metrics", name: m.id + "_popup", cfg: k.popup, type: "bool", def: !!d.popup })
         var opts = k.options || {}
         for (var o in opts)
             out.push({ section: "Metrics", name: m.id + "_" + o, cfg: opts[o], type: "bool",
                        def: !!(d.options && d.options[o]) })
-        out.push({ section: "Graphs", name: m.id + "_panelGraph", cfg: k.gp, type: "bool", def: !!d.gp })
-        out.push({ section: "Graphs", name: m.id + "_popupGraph", cfg: k.gd, type: "bool", def: !!d.gd })
+        // a stat without graph keys simply has no graph entries
+        if (k.gp) out.push({ section: "Graphs", name: m.id + "_panelGraph", cfg: k.gp, type: "bool", def: !!d.gp })
+        if (k.gd) out.push({ section: "Graphs", name: m.id + "_popupGraph", cfg: k.gd, type: "bool", def: !!d.gd })
     }
     return out
 }
@@ -112,17 +115,28 @@ function toIni(entry, value) {
 
 // Startup plan. raw: ini name -> text in the file ("" when absent); cfg: main.xml key -> the widget's current value.
 //   apply  { cfgKey: value }  valid file values that differ from the widget's value: write them to the widget
-//   fill   { iniName: text }  keys absent from the file (empty text): write the widget's current value there
+//   fill   { iniName: text }  keys to write into the file: the absent ones (empty text) from the widget's value
 //   bad    [iniName]          keys whose file text is not valid (left alone; the widget keeps its value)
+//   stale  true               the file missed writes (see below): the widget's values win and everything is filled
+// The change counter: every change of a setting raises `settingsRev` in the widget's own config and `rev` in the file.
+// A file whose rev is lower than the widget's did not receive the last writes (read-only file, full disk, killed in the
+// second between the change and the write), so at startup the widget's values win and are written to the file. An equal
+// or higher rev (hand edits do not touch it; another instance may have written) lets the file win.
 function plan(sch, raw, cfg, ids) {
-    var apply = {}, fill = {}, bad = []
-    for (var i = 0; i < sch.length; ++i) {
-        var e = sch[i], text = raw[e.name]
+    var apply = {}, fill = {}, bad = [], i, e, text
+    var revEntry = null
+    for (i = 0; i < sch.length; ++i) if (sch[i].cfg === "settingsRev") revEntry = sch[i]
+    var fileRev = revEntry ? parse(revEntry, raw[revEntry.name], ids) : undefined
+    var stale = fileRev !== undefined && fileRev < (Number(cfg.settingsRev) || 0)
+    for (i = 0; i < sch.length; ++i) {
+        e = sch[i]
+        text = raw[e.name]
+        if (stale) { fill[e.name] = toIni(e, cfg[e.cfg]); continue }
         var empty = text === undefined || text === null || String(text).replace(/^\s+|\s+$/g, "") === ""
         if (empty) { fill[e.name] = toIni(e, cfg[e.cfg]); continue }
         var v = parse(e, text, ids)
         if (v === undefined) { bad.push(e.name); continue }
         if (v !== cfg[e.cfg]) apply[e.cfg] = v
     }
-    return { apply: apply, fill: fill, bad: bad }
+    return { apply: apply, fill: fill, bad: bad, stale: stale }
 }

@@ -173,6 +173,27 @@ equal("a partial order is completed", p["apply"], {"statOrder": "net,cpu,ram,tem
 p = plan({"cpu_show": "  "})
 check("whitespace counts as absent", "cpu_show" in p["fill"])
 
+# ---- the change counter (a file that missed writes) ----
+check("every schema entry has a cfg key", all(e.get("cfg") for e in SCH))
+equal("a stat without graph keys gets no graph entries",
+      run("schema([{id:'x',name:'X',keys:{show:'showX',popup:'popupX'},defaults:{}}]).filter(function(e){return e.name.indexOf('x_')===0}).map(function(e){return e.name})"),
+      ["x_show", "x_popup"])
+equal("rev is in the schema as Main/settingsRev", [BY["rev"]["section"], BY["rev"]["cfg"]], ["Main", "settingsRev"])
+equal("rev 0 is valid, a negative or fractional rev is not", [parse("rev", "0"), parse("rev", "-1"), parse("rev", "1.5")], [0, None, None])
+p = plan({"rev": "3", "cpu_show": "false", "refreshMs": "abc"}, {"settingsRev": 5, "showCpu": True})
+equal("file rev behind the widget's: stale", p["stale"], True)
+equal("stale: nothing is applied or reported", [p["apply"], p["bad"]], [{}, []])
+equal("stale: every key is rewritten from the widget", sorted(p["fill"]), sorted(names))
+equal("stale: the rewritten values are the widget's", [p["fill"]["cpu_show"], p["fill"]["refreshMs"], p["fill"]["rev"]], ["true", "1000", "5"])
+p = plan({"rev": "5", "cpu_show": "false"}, {"settingsRev": 5})
+equal("equal rev: the file wins", [p["stale"], p["apply"]], [False, {"showCpu": False}])
+p = plan({"rev": "7", "cpu_show": "false"}, {"settingsRev": 3})
+equal("file rev ahead: the file wins and the widget takes its rev", [p["stale"], p["apply"]], [False, {"showCpu": False, "settingsRev": 7}])
+p = plan({"cpu_show": "false"}, {"settingsRev": 4})
+equal("no rev in the file: not stale, the rev is filled from the widget", [p["stale"], p["fill"]["rev"], p["apply"]], [False, "4", {"showCpu": False}])
+p = plan({"rev": "abc", "cpu_show": "false"}, {"settingsRev": 4})
+equal("an invalid rev is not stale and is left alone", [p["stale"], p["bad"]], [False, ["rev"]])
+
 # ---- how the widget uses it ----
 SF = open(os.path.join(UI, "SettingsFile.qml"), encoding="utf-8").read()
 MAIN = open(os.path.join(UI, "main.qml"), encoding="utf-8").read()
@@ -307,6 +328,57 @@ w = ini(py.snap.get("written", ""))
 equal("a GUI write sets the key", w["Main"]["maxLength"], "300")
 equal("a GUI write keeps the rest", [w["Metrics"]["cpu_show"], w["Main"]["refreshMs"], w["Main"]["order"], w.get("Foreign")],
       ["true", "abc", "net cpu", {"k": "v"}])
+
+# ---- 4. the real SettingsFile.qml against a stand-in for Plasmoid.configuration ----
+# One process per scenario (tests/settingsfile_glue.py), run side by side. Each starts the widget part with a given
+# file and given widget settings, optionally changes settings 1.6 s later, and reports the widget's settings and the file.
+import subprocess
+
+GLUE = os.path.join(ROOT, "tests", "settingsfile_glue.py")
+SCENARIOS = {
+    "first": {"cfg0": {"showCpu": False, "refreshMs": 500}, "file": None},
+    "filewins": {"cfg0": {}, "file": "[Metrics]\ncpu_show=false\n[Main]\norder=net cpu\nrev=0\n"},
+    "change": {"cfg0": {}, "file": None, "changes": {"warnTemp": 95}},
+    "stale": {"cfg0": {"settingsRev": 5, "showCpu": False, "refreshMs": 1000},
+              "file": "[Main]\nrev=2\nrefreshMs=500\n[Metrics]\ncpu_show=true\n"},
+    "ahead": {"cfg0": {"settingsRev": 3}, "file": "[Main]\nrev=7\n[Metrics]\ncpu_show=false\n"},
+    "invalid": {"cfg0": {}, "file": "[Main]\nrefreshMs=abc\nwarnTemp=500\n"},
+}
+procs = {k: subprocess.Popen([sys.executable, GLUE, json.dumps(v)], stdout=subprocess.PIPE, text=True) for k, v in SCENARIOS.items()}
+G = {}
+for k, pr in procs.items():
+    out = pr.communicate()[0].strip().splitlines()
+    try:
+        G[k] = json.loads(out[-1])
+    except (IndexError, ValueError):
+        G[k] = None
+    check("glue scenario %s ran" % k, G[k] is not None and G[k].get("ready") is True and not G[k].get("errors"),
+          repr(G[k] and (G[k].get("ready"), G[k].get("errors"))))
+G = {k: v for k, v in G.items() if v}
+
+
+def f(k):
+    return ini(G[k]["file"]) if G[k]["file"] else {}
+
+
+if "first" in G:
+    equal("glue first run: every key is written", sorted(x for sec in f("first").values() for x in sec), sorted(names))
+    equal("glue first run: the widget's values reach the file", [f("first")["Metrics"]["cpu_show"], f("first")["Main"]["refreshMs"]], ["false", "500"])
+    equal("glue first run: the widget's settings are untouched", [G["first"]["cfg"]["showCpu"], G["first"]["cfg"]["refreshMs"], G["first"]["cfg"]["settingsRev"]], [False, 500, 0])
+if "filewins" in G:
+    equal("glue: a valid file value is applied to the widget", [G["filewins"]["cfg"]["showCpu"], G["filewins"]["cfg"]["statOrder"]], [False, "net,cpu,ram,temp,freq,bat,fan"])
+    equal("glue: applying the file does not bump the counter", G["filewins"]["cfg"]["settingsRev"], 0)
+if "change" in G:
+    equal("glue: a runtime change is written to the file", f("change")["Main"]["warnTemp"], "95")
+    equal("glue: a runtime change bumps the counter in the widget and the file", [G["change"]["cfg"]["settingsRev"], f("change")["Main"]["rev"]], [1, "1"])
+if "stale" in G:
+    equal("glue: a stale file is overwritten from the widget", [f("stale")["Metrics"]["cpu_show"], f("stale")["Main"]["refreshMs"], f("stale")["Main"]["rev"]], ["false", "1000", "5"])
+    equal("glue: a stale file does not change the widget", [G["stale"]["cfg"]["showCpu"], G["stale"]["cfg"]["refreshMs"], G["stale"]["cfg"]["settingsRev"]], [False, 1000, 5])
+if "ahead" in G:
+    equal("glue: a file ahead of the widget wins and sets the counter", [G["ahead"]["cfg"]["showCpu"], G["ahead"]["cfg"]["settingsRev"]], [False, 7])
+if "invalid" in G:
+    equal("glue: invalid values stay in the file as written", [f("invalid")["Main"]["refreshMs"], f("invalid")["Main"]["warnTemp"]], ["abc", "500"])
+    equal("glue: invalid values leave the widget's values", [G["invalid"]["cfg"]["refreshMs"], G["invalid"]["cfg"]["warnTemp"]], [1000, 80])
 
 print()
 print("%d checks passed, %d failed" % (passed, len(failures)))

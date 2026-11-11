@@ -238,7 +238,7 @@ prints one line per failure, a summary, and exits non-zero if anything failed. I
 python3 tests/config_test.py
 ```
 
-Same requirements as above (about 10 seconds, because `QtCore.Settings` writes to the file about a second after a
+Same requirements as above (about 20 seconds, because `QtCore.Settings` writes to the file about a second after a
 change). It checks `Config.js` (the rules of `~/.config/glancerc`, see architecture section 15):
 
 - the schema against `main.xml` (every key exists, with the same type, default and range) and against the registry
@@ -248,7 +248,11 @@ change). It checks `Config.js` (the rules of `~/.config/glancerc`, see architect
   unknown ids) and the first-run migration (a file with no keys is filled from the widget's values);
 - a real round trip through `QtCore.Settings` in a temp file: a first run writes every key, a valid hand edit wins,
   an invalid value stays as written, a foreign section survives, a GUI write changes one key and keeps the rest;
-- how `main.qml` / `SettingsFile.qml` use it (one watcher per setting, the startup read waits for the parent to complete, no timer).
+- how `main.qml` / `SettingsFile.qml` use it (one watcher per setting, the startup read waits for the parent to complete, no timer);
+- the change counter (`rev`): a file behind the widget is overwritten from the widget, an equal or higher one wins;
+- the real `SettingsFile.qml` in six scenarios (first run, file wins, runtime change, stale file, file ahead, invalid
+  values) through `tests/settingsfile_glue.py`, which replaces `Plasmoid.configuration` with a stub object, so the glue
+  (the `Settings` objects, the watchers, the `ready` flag, the counter) is tested without Plasma. The test takes about 20 s.
 
 To try the file in the real widget, point `XDG_CONFIG_HOME` at a scratch directory with a prepared `glancerc` and
 run `plasmawindowed <path to package>` (one run per command, then a screenshot): the order, shown stats and so on
