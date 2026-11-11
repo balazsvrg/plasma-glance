@@ -40,13 +40,16 @@ package/
   contents/ui/configGraphs.qml   settings page: panel graph style, chart style, history length
   contents/ui/LengthNotice.qml   warning banner shown on the General and Metrics pages
   contents/ui/Metrics.js         registry that describes each stat as data; panel text and width reserves come from it
+  contents/ui/Layout.js          strip length, fit and drag arithmetic as pure functions (section 5)
   contents/ui/Config.js          the settings file's rules: key schema from the registry, parse/validate, startup plan
   contents/ui/SettingsFile.qml   reads ~/.config/glancerc at startup, writes every settings change to it
 install.sh / uninstall.sh        kpackagetool6 wrappers (install or upgrade for the current user)
 package.sh                       zips metadata.json + contents/ into dist/<id>-<version>.plasmoid
 tests/metrics_test.py            checks the registry and its use in main.qml (python3 + PySide6, no Plasma needed)
 tests/config_test.py             checks Config.js against main.xml and the registry, and a real round trip through QtCore.Settings
-tests/golden/                    the panel text of release v0.9.1 (panel_text.json) and the script that generated it
+tests/layout_test.py             checks Layout.js with rule cases and golden data (python3 + PySide6, no Plasma needed)
+tests/golden/                    the panel text of release v0.9.1 (panel_text.json) and the script that generated it;
+                                 layout.json, the results of the old length code, and generate_layout.py
 ```
 
 `contents/ui/Metrics.js` is a registry that describes each stat as data: its labels, settings keys and
@@ -215,8 +218,8 @@ maximum length dropped from the strip. Do not hard-code stat names or order anyw
 ## 4. The text pipeline and the width pipeline
 
 There is exactly one place that produces panel text, the registry (`Metrics.js`), and a small set of functions
-in `main.qml` that look it up and measure it. The maximum-length calculation (`stripLength`, `computeFit`) and
-the on-screen layout both call them, so the calculation can only drift from reality if somebody writes a panel
+in `main.qml` that look it up and measure it. The maximum-length calculation (`stripLength`, `computeFit`, which
+forward to `Layout.js`) and the on-screen layout both use the lengths they measure, so the calculation can only drift from reality if somebody writes a panel
 string somewhere else.
 
 ### Text: `statText(id, compact, vert)`
@@ -267,7 +270,7 @@ discharging one horizontally). That is what width measurements use.
 | `reservedWidth(id, compact)` | horizontal: the widest text of a stat, the width of its `TextMetrics` item |
 | `verticalWidth(id)` | vertical: widest line of `verticalLines(id, false, true)` measured with `FontMetrics fm`; at least the icon size for stats with a `decoration` (`fan`) |
 | `cellLength(id, level)` | space one stat takes along the panel at a step (width, or height when vertical) |
-| `stripLength(level, drop)` | length of the whole strip at a step with the last `drop` stats removed |
+| `stripLength(level, drop)` | length of the whole strip at a step with the last `drop` stats removed (forwards to `Layout.js`) |
 
 Horizontal: the `Label` in a `MetricCell` has `Layout.minimumWidth` and `preferredWidth` equal to
 `reservedWidth(statId, statCompact(statId))`, so the strip does not resize when a number gains a digit.
@@ -289,7 +292,7 @@ a stat with a `decoration` (`hasIcon(id)`, the fan), plus `smallSpacing + inline
 `cellLength` vertical: line count (`verticalLines(id, false, true).length`) times `mLine.height`, plus the
 icon size for a stat with a `decoration` (`fan`), plus `gridUnit` for an inline graph.
 
-`stripLength(level, drop)` adds the cell lengths of the first `n = shown - drop` stats, then
+`stripLength(level, drop)` (the function `L.stripLength` in `Layout.js`, see section 5) adds the cell lengths of the first `n = shown - drop` stats, then
 `(n - 1) * (1 + 2 * gap)` (a 1 px divider and a gap on each side), rounds up, and adds a flat 1 px for layout
 rounding. The gap is `spacingFor(level)` (largeSpacing, or smallSpacing at level 3) horizontally and
 `rowSpacingFor(level)` (smallSpacing, or 0 at level 3) vertically. The extra 1 px was measured, per the code
@@ -319,20 +322,64 @@ fits:
 If level 3 still does not fit, stats are dropped from the end of `shownIds()` one at a time
 (`drop = 1, 2, ...`) at level 3; the first stat is never dropped.
 
-- `levelList()` is `[0, 1, 2, 3]` horizontally and `[0, 1, 3]` vertically (step 2 saves no length there).
+- The levels are `[0, 1, 2, 3]` horizontally and `[0, 1, 3]` vertically (step 2 saves no length there).
+  `layoutInput` (below) sets them.
 - `computeFit()` returns `{ level, drop }`. With `maxLength <= 0` or nothing shown it is `{0, 0}`.
-  Otherwise it takes the first level in `levelList()` whose `stripLength(level, 0) <= maxLength`; failing
+  Otherwise it takes the first level in the list whose `stripLength(level, 0) <= maxLength`; failing
   that, the smallest `drop` for which `stripLength(3, drop) <= maxLength`; failing that, everything but the
   first stat (`drop = shown - 1`).
 - `fit` is `dragging ? dragFit() : computeFit()`. `lengthLevel` is `fit.level`.
 - `visibleIds` / `droppedIds` are `shownIds()` split at `shown - fit.drop`.
 - `maxLength` (the root property) is `dragging ? dragMax() : Plasmoid.configuration.maxLength`, so while the
   handle is dragged, the readout and the calculation use the live value.
-- `configs()` lists every layout the strip can take, longest to shortest: one entry per level in
-  `levelList()` with no drops, then one per drop at level 3. Each entry is `{ level, drop, len }` with
+- `configs()` lists every layout the strip can take, longest to shortest: one entry per level
+  with no drops, then one per drop at level 3. Each entry is `{ level, drop, len }` with
   `len = stripLength(level, drop)`. The result is cached in `readonly property var layouts: configs()`.
   It depends only on settings (no live sensor values, because `cellLength` uses worst-case samples), so it
   is recomputed when settings change and not when a sensor ticks.
+
+### The layout module (`Layout.js`)
+
+`contents/ui/Layout.js` holds the arithmetic of this section and of section 6. It is a `.pragma library`:
+the functions are pure, see no QML property and take no callback. `main.qml` imports it as `L`. It measures
+nothing; `main.qml` measures and passes the numbers in as one input record.
+
+The input record, built by `root.layoutInput`:
+
+| Field | Content |
+|---|---|
+| `levels` | the steps the strip can take, longest first: `[0, 1, 2, 3]`, or `[0, 1, 3]` when vertical |
+| `cells` | for each level, the length of each shown stat in order (`cellLength(id, level)`) |
+| `gap` | for each level, the whole separator cost between two stats: `1 + 2 * spacing` (`spacingFor`, or `rowSpacingFor` when vertical) |
+
+A layout is `{ level, drop, len }` and a fit is `{ level, drop }`. The number of stats is the length of
+the cell list of the first level. Level 3 is the drop level.
+
+| Function | Returns |
+|---|---|
+| `stripLength(input, level, drop)` | `ceil(sum + (n - 1) * gap) + 1` for the first `n = shown - drop` stats; 0 when none is left |
+| `configs(input)` | every layout, longest first: each level with `drop` 0, then `drop` 1 to `shown - 1` at level 3 |
+| `computeFit(input, maxLength)` | the fit for a limit (the rules above) |
+| `dragStart(layouts, fit)` | the index of the layout equal to the fit; 0 when absent |
+| `snapLimit(dragLength)` | `max(20, round(dragLength / 5) * 5)` |
+| `dragStep(layouts, cfgIndex, limit)` | the new layout index (the halfway rule, section 6) |
+| `dragMax(layouts, cfgIndex, limit, fullLength)` | the limit to save: `max(limit, layout.len)`, or 0 at or above `fullLength` |
+
+What stays in `main.qml`: the measuring (`reservedWidth`, `verticalWidth`, `cellLength`, `spacingFor`,
+`rowSpacingFor`, line height, `Kirigami.Units`), the state (`dragging`, `dragMoved`, `dragLength`,
+`dragCfg`, `handleAtStart`), the pointer handlers and every write to `Plasmoid.configuration`. The old
+function names (`stripLength`, `computeFit`, `configs`, `snapLimit`, `dragStep`, `dragMax`, `beginDrag`) remain
+as thin wrappers that pass `layoutInput`, `layouts` and the drag state to the module.
+
+The binding rule. `Layout.js` cannot track properties, so `layoutInput` is the one place that must read every
+dependency inside its own binding: the shown stats, the orientation, every cell length and the spacing. A
+dependency read only inside the module would leave `layouts` and `fit` stale after a change. Add a new
+input to `layoutInput`, never to a function argument list that hides the read. `layoutInput` computes every
+level for every shown stat, so `computeFit` is not lazy; this runs when a setting changes, not on every mouse
+move. Step 2 is not in `levels` on a vertical panel, so `cellLength` is not called for it there.
+
+Tests: `python3 tests/layout_test.py` ([development.md](development.md) lists the checks). The golden
+data `tests/golden/layout.json` holds the results of the old `main.qml` code.
 
 Hysteresis: for the saved limit there is none; `computeFit` is a pure function of the limit. The only
 hysteresis is the halfway rule that applies while the handle is dragged (next section).
@@ -369,7 +416,7 @@ The drag, in the order the handlers call it (`MouseArea grab` in the handle):
 The pointer is read with `mapToGlobal` (`pointerPos`), not from the handle's own coordinates, because the
 handle moves as the strip changes length and a local coordinate would make the drag unsteady.
 
-`dragStep()` implements the halfway rule over the cached `layouts` (never `configs()`):
+`dragStep()` wraps `L.dragStep(layouts, dragCfg, snapLimit())` and implements the halfway rule over the cached `layouts` (never `configs()`):
 
 1. `limit = snapLimit()` = `dragLength` rounded to 5 px, at least 20.
 2. `fitIdx` is the first (longest) layout with `len <= limit`. If `fitIdx < dragCfg`, set `dragCfg = fitIdx`:
@@ -380,7 +427,7 @@ handle moves as the strip changes length and a local coordinate would make the d
    the strip jump.
 
 `dragFit()` returns `layouts[dragCfg]`'s level and drop, which is what `fit` follows while dragging.
-`dragMax()` is `max(snapLimit(), dragLayout().len)`, so the saved value is never shorter than the layout on
+`dragMax()` (`L.dragMax`) is `max(snapLimit(), dragLayout().len)`, so the saved value is never shorter than the layout on
 screen (what you see is what is saved), and a value at or above `stripLength(0, 0)` is saved as 0
 ("no limit"). `dragMoved` exists so that a plain click (press and release with no movement) does not rewrite
 the saved length.
@@ -660,7 +707,7 @@ only while the popup shows them.
 - `compact` (the `MouseArea`) publishes `panelThickness` (its width when vertical, else 0) to `root` through a
   `Binding`; `statCompact` reads it.
 - Lengths are heights: `cellLength` multiplies the line count by `mLine.height` ("Ag" in the default font)
-  and adds the icon height for `fan` and `gridUnit` for an inline graph. Level 2 is skipped (`levelList()`),
+  and adds the icon height for `fan` and `gridUnit` for an inline graph. Level 2 is skipped (`layoutInput` leaves it out of `levels`),
   and `lengthTextShort` is never true.
 - The handle runs along the vertical axis (`SizeVerCursor`, `y`, `height`).
 - `MetricCell`'s inner `GridLayout` has its `width`/`height` bound explicitly (`parent.width`/`parent.height`
@@ -856,6 +903,8 @@ Each of these is visible in the code or its comments, except where marked.
   every edit; errors do not reach stderr.
 - Do not read a derived property inside a change handler: `droppedIds` was stale when `fit`'s handler ran.
   `syncLengthInfo` computes from `fit` and is scheduled with `Qt.callLater`.
+- Every input of the length calculation must be read inside `layoutInput`. `Layout.js` cannot track a
+  property, so a read that is only inside the module leaves `layouts` and `fit` stale.
 - Do not call `configs()` on every mouse move. Use the `layouts` cache; `beginDrag` and `dragStep` read
   it. `configs()` is only called from the binding that fills `layouts`.
 - Do not hand-write a panel string or width outside `statText` / `reservedWidth` / `verticalWidth` /
