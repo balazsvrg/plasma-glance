@@ -33,6 +33,9 @@ package/                           the widget package (what gets installed)
   contents/ui/configMetrics.qml   settings page: Metrics (reorderable table)
   contents/ui/configGraphs.qml    settings page: Graphs
   contents/ui/LengthNotice.qml    settings banner about the maximum length
+  contents/ui/Metrics.js          the metric registry (panel text, widths, scales, popup, sensors)
+  contents/ui/Layout.js           strip length, fit and drag arithmetic (pure functions)
+tests/                            python3 tests without Plasma (metrics, layout, config) and tests/golden/
 install.sh / uninstall.sh         install, upgrade and remove for the current user
 package.sh                        builds dist/<id>-<version>.plasmoid
 dist/                             build output, not tracked by git
@@ -231,6 +234,33 @@ prints one line per failure, a summary, and exits non-zero if anything failed. I
 - the structure: unique ids, names equal to the Metrics table and `LengthNotice` labels, no sensor id spelled in
   `main.qml` (only the per-core pattern), and every key of `main.xml` either claimed by one descriptor (with the same
   default) or listed in the script with the reason it stays outside.
+
+### Layout test
+
+```
+python3 tests/layout_test.py
+```
+
+Same requirements as above. It tests `package/contents/ui/Layout.js` (strip length, fit and drag arithmetic,
+see architecture section 5). It checks:
+
+- rule cases written by hand: `stripLength` (rounding, the flat 1 px, nothing left), `configs` (the layout
+  list for several stat counts, horizontal and vertical), every branch of `computeFit`, `dragStart`,
+  `snapLimit` (floor and rounding), `dragStep` (a nudge does not jump, past halfway it does, growing is
+  immediate, equal-length layouts are skipped) and `dragMax` (0 at the full length, never below the shown layout);
+- the golden data `tests/golden/layout.json`: the results of the old code of `main.qml` (before `Layout.js`
+  took over) on a grid of stat counts, orientations, three sets of cell lengths, limits from 0 to above the
+  full length, and pointer walks. The module must give every result exactly.
+
+`metrics_test.py` checks that `main.qml` imports `Layout.js` and keeps no copy of the arithmetic.
+
+The environment variable `LAYOUT_JS` sets another path for the module, to test the tests with a changed copy.
+
+To regenerate the golden data, run `python3 tests/golden/generate_layout.py <revision>`. The script cuts
+the old length functions out of `main.qml` at that revision and runs them in `QJSEngine`. The revision must
+still hold those functions: use `aba333b`, the commit before the module, not `HEAD`. Regenerate it only
+when the arithmetic is meant to change, and review the diff of the JSON as a behaviour change. Do not
+regenerate it to make a failing test pass.
 
 ### Settings file test
 

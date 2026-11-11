@@ -277,6 +277,7 @@ package/
   contents/ui/configGraphs.qml  settings tab: Graphs
   contents/ui/LengthNotice.qml  settings notice about the maximum length
   contents/ui/Metrics.js        the metric registry (panel text, widths, scales, popup, sensors)
+  contents/ui/Layout.js         strip length, fit and drag arithmetic (pure functions)
   contents/ui/Config.js         rules of the settings file (keys, validation, startup plan)
   contents/ui/SettingsFile.qml  reads and writes ~/.config/glancerc
 install.sh / uninstall.sh
