@@ -127,7 +127,7 @@ that is reassigned on every `onObjectAdded`, so a lookup made before the items e
 (the same pattern as `reserveItems` and `historyItems`). `sensorOf(id, name)` and `sensorValue(id, name)` read it,
 and `statVals(id)` returns every sensor of a plain-sensor stat under the sensor's name (`sensorVals`). The
 exceptions are the fans (`fanRepeater` delegates) and the per-core temperatures (`perCore` delegates inside
-`repeatBlock`), which are created on demand. Every plain sensor uses `updateRateLimit: root.refreshMs`, including
+`RepeatBlock`), which are created on demand. Every plain sensor uses `updateRateLimit: root.refreshMs`, including
 `temp.coreCount`, which is constant. `refreshMs` is the setting clamped to at least 250.
 
 ---
@@ -182,7 +182,7 @@ is above 0).
 ### Popup
 
 `fullRepresentation` is a `ColumnLayout` with a `Repeater` over `statOrder`. Each delegate is a `Loader`
-with `active: root.popupShown(modelData)` and the one generic `statBlock` as its `sourceComponent`; the Loader's
+with `active: root.popupShown(modelData)` and the one generic `StatBlock` as its `sourceComponent`; the Loader's
 `blockStatId` tells the block which stat it shows. There are no per-stat blocks: the block is built from the
 stat's registry `popup` descriptor, in this order:
 
@@ -194,7 +194,7 @@ stat's registry `popup` descriptor, in this order:
 2. the hooks (`popup.hooks`): `perBattery` and `chargeRow`, one component each (`hookComponent(name)`). A hook
    item says `shown`, and its Loader is visible only then, so an empty hook adds no layout spacing;
 3. the `PopupGraph { statId }` (`graphWhen` names its flag), then the remaining rows;
-4. `popup.repeat` (`repeatBlock`): a header and a two-column grid, one line per item (the per-core
+4. `popup.repeat` (`RepeatBlock`): a header and a two-column grid, one line per item (the per-core
    temperatures). The sensor id is `repeat.sensor` with `{n}` the 0-based index; the label's `{n}` is index + 1.
 
 `popupVals(id)` is every sensor of a plain stat (the popup-only ones too), or `statVals` for the others (the
@@ -637,7 +637,7 @@ the popup opening re-evaluates it. Three tiers:
   read only while the popup is open. The tests compare the registry's gates with the 14 hand-written `enabled:`
   expressions of v0.9.2 over every combination of the flags.
 - Created on demand: fan sensors (delegates of `fanRepeater`, only while `fanWanted`) and per-core sensors
-  (delegates inside `repeatBlock`, which exists only as long as the popup's Loader for the temp
+  (delegates inside `RepeatBlock`, which exists only as long as the popup's Loader for the temp
   block is active). A code comment says these exist only while the popup is open; that depends on how Plasma
   instantiates `fullRepresentation`, which was not checked here.
 
