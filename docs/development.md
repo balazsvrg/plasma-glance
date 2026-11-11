@@ -250,8 +250,9 @@ see architecture section 5). It checks:
   immediate, equal-length layouts are skipped) and `dragMax` (0 at the full length, never below the shown layout);
 - the golden data `tests/golden/layout.json`: the results of the old code of `main.qml` (before `Layout.js`
   took over) on a grid of stat counts, orientations, three sets of cell lengths, limits from 0 to above the
-  full length, and pointer walks. The module must give every result exactly;
-- how `main.qml` uses the module (`metrics_test.py` also checks that it imports `Layout.js` and keeps no copy of the arithmetic).
+  full length, and pointer walks. The module must give every result exactly.
+
+`metrics_test.py` checks that `main.qml` imports `Layout.js` and keeps no copy of the arithmetic.
 
 The environment variable `LAYOUT_JS` sets another path for the module, to test the tests with a changed copy.
 

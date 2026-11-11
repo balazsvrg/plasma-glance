@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerates tests/golden/layout.json from the old layout code of main.qml.
 
-    python3 tests/golden/generate_layout.py [git-revision]        (default: HEAD)
+    python3 tests/golden/generate_layout.py [git-revision]        (default: aba333b)
 
 The script reads package/contents/ui/main.qml at the given revision. It cuts out the length functions
 (stripLength, levelList, computeFit, configs, snapLimit, dragLayout, dragFit, beginDrag, dragStep, dragMax)
@@ -24,7 +24,7 @@ from PySide6.QtCore import QCoreApplication
 from PySide6.QtQml import QJSEngine
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-REV = sys.argv[1] if len(sys.argv) > 1 else "HEAD"
+REV = sys.argv[1] if len(sys.argv) > 1 else "aba333b"
 OUT = os.path.join(ROOT, "tests", "golden", "layout.json")
 FUNCTIONS = ["stripLength", "levelList", "computeFit", "configs", "snapLimit", "dragLayout", "dragFit",
              "beginDrag", "dragStep", "dragMax"]
@@ -39,7 +39,10 @@ def source(rev):
 
 def function_text(qml, name):
     """The text of `    function name(...) { ... }`, found by matching braces."""
-    start = qml.index("    function %s(" % name)
+    marker = "    function %s(" % name
+    if marker not in qml:
+        raise SystemExit("this revision has no function %s; use a revision before the layout module, for example aba333b" % name)
+    start = qml.index(marker)
     i = qml.index("{", start)
     depth = 0
     for j in range(i, len(qml)):
